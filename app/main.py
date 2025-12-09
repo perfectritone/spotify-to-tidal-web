@@ -21,6 +21,7 @@ SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
 SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000")
+IS_PRODUCTION = BASE_URL.startswith("https://")
 
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
@@ -59,7 +60,10 @@ def save_session(request: Request, response, session_data: dict):
         sessions[session_id] = session_data
         response.set_cookie(
             "session_id", session_id,
-            httponly=True, secure=False, samesite="lax", max_age=3600
+            httponly=True,
+            secure=IS_PRODUCTION,
+            samesite="lax",
+            max_age=3600
         )
 
 
