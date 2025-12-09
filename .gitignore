@@ -17,3 +17,8 @@ venv/
 
 # uv
 uv.lock
+
+# Cache
+*.db
+.cache.db
+.pytest_cache/
