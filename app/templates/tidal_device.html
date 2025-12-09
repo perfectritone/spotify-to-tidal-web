@@ -2,15 +2,98 @@
 
 {% block content %}
 <h1>Connect Tidal</h1>
-<p class="subtitle">Complete authorization in the popup</p>
+<p class="subtitle">Link your Tidal account</p>
 
 <div class="card">
-    <p>Click the button below to authorize with Tidal:</p>
-    <a href="{{ verification_uri }}" target="_blank" class="btn btn-tidal" style="display: inline-block; margin: 1rem 0;">
+    <div class="steps">
+        <div class="step">
+            <span class="step-number">1</span>
+            <span class="step-text">Click the button below to open Tidal authorization</span>
+        </div>
+        <div class="step">
+            <span class="step-number">2</span>
+            <span class="step-text">Log in with your Tidal account if prompted</span>
+        </div>
+        <div class="step">
+            <span class="step-number">3</span>
+            <span class="step-text"><strong>Click "Continue"</strong> when you see "Link your device to your TIDAL account"</span>
+        </div>
+        <div class="step">
+            <span class="step-number">4</span>
+            <span class="step-text">Come back to this page - it will automatically detect when you're connected</span>
+        </div>
+    </div>
+
+    <a href="{{ verification_uri }}" target="_blank" class="btn btn-tidal" style="display: block; text-align: center; margin: 1.5rem 0;">
         Open Tidal Authorization
     </a>
-    <p id="status" style="color: #b3b3b3;">Waiting for authorization...</p>
+
+    <div id="status-box" style="text-align: center; padding: 1rem; background: #1a1a1a; border-radius: 8px;">
+        <div class="spinner" id="spinner"></div>
+        <p id="status" style="color: #b3b3b3; margin: 0.5rem 0 0 0;">Waiting for authorization...</p>
+    </div>
 </div>
+
+<style>
+    .steps {
+        margin-bottom: 1rem;
+    }
+    .step {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 0.75rem;
+        color: #b3b3b3;
+    }
+    .step-number {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        background: #00ffff;
+        color: #000;
+        border-radius: 50%;
+        font-size: 0.75rem;
+        font-weight: bold;
+        margin-right: 0.75rem;
+        flex-shrink: 0;
+    }
+    .step-text {
+        padding-top: 2px;
+    }
+    .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #333;
+        border-top-color: #00ffff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    #status-box.success {
+        background: #1db95422;
+        border: 1px solid #1db954;
+    }
+    #status-box.success .spinner {
+        display: none;
+    }
+    #status-box.success #status {
+        color: #1db954;
+    }
+    #status-box.error {
+        background: #e74c3c22;
+        border: 1px solid #e74c3c;
+    }
+    #status-box.error .spinner {
+        display: none;
+    }
+    #status-box.error #status {
+        color: #e74c3c;
+    }
+</style>
 
 <script>
     // Poll for auth completion
@@ -20,9 +103,13 @@
             const data = await response.json();
 
             if (data.status === 'success') {
-                document.getElementById('status').textContent = 'Success! Redirecting...';
-                window.location.href = '/';
+                document.getElementById('status-box').className = 'success';
+                document.getElementById('status').textContent = 'Connected! Redirecting...';
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
             } else if (data.status === 'error') {
+                document.getElementById('status-box').className = 'error';
                 document.getElementById('status').textContent = 'Error: ' + data.message;
             } else {
                 // Still pending, check again
