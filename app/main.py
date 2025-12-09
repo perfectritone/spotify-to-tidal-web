@@ -15,11 +15,11 @@ from itsdangerous import URLSafeTimedSerializer
 
 from .sync import run_sync
 
-# Config from environment
+# Config from environment (host sets these once)
 SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
 SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000")
 
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
@@ -48,15 +48,18 @@ def get_session(request: Request) -> dict:
     return {}
 
 
-def set_session(response, session_data: dict) -> str:
-    """Create new session and set cookie."""
-    session_id = secrets.token_urlsafe(32)
-    sessions[session_id] = session_data
-    response.set_cookie(
-        "session_id", session_id,
-        httponly=True, secure=True, samesite="lax", max_age=3600
-    )
-    return session_id
+def save_session(request: Request, response, session_data: dict):
+    """Save session data, creating new session if needed."""
+    session_id = request.cookies.get("session_id")
+    if session_id and session_id in sessions:
+        sessions[session_id] = session_data
+    else:
+        session_id = secrets.token_urlsafe(32)
+        sessions[session_id] = session_data
+        response.set_cookie(
+            "session_id", session_id,
+            httponly=True, secure=False, samesite="lax", max_age=3600
+        )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -74,7 +77,7 @@ async def home(request: Request):
 # --- Spotify OAuth ---
 
 @app.get("/auth/spotify")
-async def spotify_auth():
+async def spotify_auth(request: Request):
     """Redirect to Spotify authorization."""
     state = secrets.token_urlsafe(16)
     scope = "user-library-read playlist-read-private playlist-read-collaborative user-follow-read"
@@ -133,11 +136,7 @@ async def spotify_callback(request: Request, code: Optional[str] = None, error: 
     session["spotify_user"] = user_data.get("display_name") or user_data.get("id")
 
     response = RedirectResponse("/")
-    if "session_id" not in request.cookies or request.cookies["session_id"] not in sessions:
-        set_session(response, session)
-    else:
-        sessions[request.cookies["session_id"]] = session
-
+    save_session(request, response, session)
     return response
 
 
@@ -160,11 +159,7 @@ async def tidal_auth(request: Request):
     }
 
     response = RedirectResponse("/auth/tidal/device")
-    if "session_id" not in request.cookies or request.cookies["session_id"] not in sessions:
-        set_session(response, session)
-    else:
-        sessions[request.cookies["session_id"]] = session
-
+    save_session(request, response, session)
     return response
 
 
