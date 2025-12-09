@@ -229,7 +229,8 @@ async def tidal_device(request: Request):
     pending = pending_tidal_auth.get(auth_id) if auth_id else None
 
     if not pending:
-        return RedirectResponse("/")
+        # Auth state lost (server restart or different machine) - restart auth
+        return RedirectResponse("/auth/tidal")
 
     return templates.TemplateResponse("tidal_device.html", {
         "request": request,
@@ -244,7 +245,8 @@ async def tidal_check(request: Request):
     pending = pending_tidal_auth.get(auth_id) if auth_id else None
 
     if not pending:
-        return {"status": "error", "message": "No pending auth"}
+        # Auth state lost - tell frontend to restart
+        return {"status": "restart", "message": "Auth session expired, restarting..."}
 
     future = pending["future"]
     tidal = pending["session"]

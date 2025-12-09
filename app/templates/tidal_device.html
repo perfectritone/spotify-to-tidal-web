@@ -119,6 +119,10 @@
 
                 document.body.appendChild(form);
                 form.submit();
+            } else if (data.status === 'restart') {
+                // Auth state lost, restart the flow
+                document.getElementById('status').textContent = 'Restarting authorization...';
+                window.location.href = '/auth/tidal';
             } else if (data.status === 'error') {
                 document.getElementById('status-box').className = 'error';
                 document.getElementById('status').textContent = 'Error: ' + data.message;
