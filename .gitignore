@@ -22,3 +22,6 @@ uv.lock
 *.db
 .cache.db
 .pytest_cache/
+
+# Sync output files
+*not found.txt
