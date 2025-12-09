@@ -2,48 +2,233 @@
 
 {% block content %}
 <h1>Sync Complete</h1>
+<p class="subtitle">Here's what happened</p>
 
+<!-- Success Summary -->
 <div class="card">
-    {% if result.playlists %}
-    <h3>Playlists</h3>
-    <p>{{ result.playlists.synced }} playlists synced</p>
-    {% if result.playlists.not_found %}
-    <p style="color: #b3b3b3;">{{ result.playlists.not_found|length }} tracks not found</p>
-    {% endif %}
-    {% endif %}
-
-    {% if result.favorites %}
-    <h3>Favorites</h3>
-    <p>{{ result.favorites.added }} tracks added</p>
-    {% if result.favorites.not_found %}
-    <p style="color: #b3b3b3;">{{ result.favorites.not_found|length }} tracks not found</p>
-    {% endif %}
-    {% endif %}
-
-    {% if result.albums %}
-    <h3>Albums</h3>
-    <p>{{ result.albums.added }} albums added</p>
-    {% if result.albums.not_found %}
-    <p style="color: #b3b3b3;">{{ result.albums.not_found|length }} albums not found:</p>
-    <ul style="color: #b3b3b3; font-size: 0.875rem;">
-        {% for album in result.albums.not_found[:10] %}
-        <li>{{ album }}</li>
-        {% endfor %}
-        {% if result.albums.not_found|length > 10 %}
-        <li>...and {{ result.albums.not_found|length - 10 }} more</li>
+    <h3 style="color: #1db954; margin-top: 0;">Successfully Synced</h3>
+    <div class="stats-grid">
+        {% if result.playlists %}
+        <div class="stat-item">
+            <span class="stat-number">{{ result.playlists.synced }}</span>
+            <span class="stat-label">Playlists</span>
+        </div>
         {% endif %}
-    </ul>
-    {% endif %}
-    {% endif %}
-
-    {% if result.artists %}
-    <h3>Artists</h3>
-    <p>{{ result.artists.added }} artists followed</p>
-    {% if result.artists.not_found %}
-    <p style="color: #b3b3b3;">{{ result.artists.not_found|length }} artists not found</p>
-    {% endif %}
-    {% endif %}
+        {% if result.favorites %}
+        <div class="stat-item">
+            <span class="stat-number">{{ result.favorites.added }}</span>
+            <span class="stat-label">Favorite Tracks</span>
+        </div>
+        {% endif %}
+        {% if result.albums %}
+        <div class="stat-item">
+            <span class="stat-number">{{ result.albums.added }}</span>
+            <span class="stat-label">Albums</span>
+        </div>
+        {% endif %}
+        {% if result.artists %}
+        <div class="stat-item">
+            <span class="stat-number">{{ result.artists.added }}</span>
+            <span class="stat-label">Artists</span>
+        </div>
+        {% endif %}
+    </div>
 </div>
 
-<a href="/" class="btn btn-sync" style="text-align: center;">Back to Home</a>
+<!-- Not Found Section -->
+{% set has_not_found = (result.playlists and result.playlists.not_found) or
+                       (result.favorites and result.favorites.not_found) or
+                       (result.albums and result.albums.not_found) or
+                       (result.artists and result.artists.not_found) %}
+
+{% if has_not_found %}
+<div class="card" style="border-left: 3px solid #e74c3c;">
+    <h3 style="color: #e74c3c; margin-top: 0;">Not Found on Tidal</h3>
+    <p style="color: #b3b3b3; margin-bottom: 1.5rem;">These items couldn't be matched. They may not be available on Tidal or have different names.</p>
+
+    <!-- Tracks from Playlists -->
+    {% if result.playlists and result.playlists.not_found %}
+    <details class="not-found-section">
+        <summary>
+            <span class="section-icon">🎵</span>
+            <span class="section-title">Playlist Tracks</span>
+            <span class="section-count">{{ result.playlists.not_found|length }}</span>
+        </summary>
+        <ul class="not-found-list">
+            {% for track in result.playlists.not_found %}
+            <li>{{ track }}</li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+
+    <!-- Favorite Tracks -->
+    {% if result.favorites and result.favorites.not_found %}
+    <details class="not-found-section">
+        <summary>
+            <span class="section-icon">❤️</span>
+            <span class="section-title">Liked Songs</span>
+            <span class="section-count">{{ result.favorites.not_found|length }}</span>
+        </summary>
+        <ul class="not-found-list">
+            {% for track in result.favorites.not_found %}
+            <li>{{ track }}</li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+
+    <!-- Albums -->
+    {% if result.albums and result.albums.not_found %}
+    <details class="not-found-section">
+        <summary>
+            <span class="section-icon">💿</span>
+            <span class="section-title">Albums</span>
+            <span class="section-count">{{ result.albums.not_found|length }}</span>
+        </summary>
+        <ul class="not-found-list">
+            {% for album in result.albums.not_found %}
+            <li>{{ album }}</li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+
+    <!-- Artists -->
+    {% if result.artists and result.artists.not_found %}
+    <details class="not-found-section">
+        <summary>
+            <span class="section-icon">🎤</span>
+            <span class="section-title">Artists</span>
+            <span class="section-count">{{ result.artists.not_found|length }}</span>
+        </summary>
+        <ul class="not-found-list">
+            {% for artist in result.artists.not_found %}
+            <li>{{ artist }}</li>
+            {% endfor %}
+        </ul>
+    </details>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Errors -->
+{% set has_errors = (result.playlists and result.playlists.error) or
+                    (result.favorites and result.favorites.error) or
+                    (result.albums and result.albums.error) or
+                    (result.artists and result.artists.error) %}
+
+{% if has_errors %}
+<div class="card" style="border-left: 3px solid #f39c12;">
+    <h3 style="color: #f39c12; margin-top: 0;">Errors</h3>
+    {% if result.playlists and result.playlists.error %}
+    <p><strong>Playlists:</strong> {{ result.playlists.error }}</p>
+    {% endif %}
+    {% if result.favorites and result.favorites.error %}
+    <p><strong>Favorites:</strong> {{ result.favorites.error }}</p>
+    {% endif %}
+    {% if result.albums and result.albums.error %}
+    <p><strong>Albums:</strong> {{ result.albums.error }}</p>
+    {% endif %}
+    {% if result.artists and result.artists.error %}
+    <p><strong>Artists:</strong> {{ result.artists.error }}</p>
+    {% endif %}
+</div>
+{% endif %}
+
+<a href="/" class="btn btn-sync" style="text-align: center; display: block;">Back to Home</a>
+
+<style>
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+        gap: 1rem;
+        text-align: center;
+    }
+    .stat-item {
+        padding: 1rem;
+        background: #1a1a1a;
+        border-radius: 8px;
+    }
+    .stat-number {
+        display: block;
+        font-size: 2rem;
+        font-weight: bold;
+        color: #1db954;
+    }
+    .stat-label {
+        display: block;
+        font-size: 0.75rem;
+        color: #b3b3b3;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .not-found-section {
+        margin-bottom: 0.5rem;
+        border: 1px solid #333;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    .not-found-section summary {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background: #1a1a1a;
+        cursor: pointer;
+        user-select: none;
+    }
+    .not-found-section summary:hover {
+        background: #222;
+    }
+    .not-found-section[open] summary {
+        border-bottom: 1px solid #333;
+    }
+    .section-icon {
+        margin-right: 0.75rem;
+        font-size: 1.1rem;
+    }
+    .section-title {
+        flex: 1;
+        font-weight: 500;
+    }
+    .section-count {
+        background: #e74c3c;
+        color: #fff;
+        padding: 0.15rem 0.5rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .not-found-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    .not-found-list li {
+        padding: 0.5rem 1rem;
+        border-bottom: 1px solid #222;
+        color: #b3b3b3;
+        font-size: 0.875rem;
+    }
+    .not-found-list li:last-child {
+        border-bottom: none;
+    }
+    .not-found-list li:hover {
+        background: #1a1a1a;
+    }
+    details summary::-webkit-details-marker {
+        display: none;
+    }
+    details summary::before {
+        content: "▶";
+        margin-right: 0.5rem;
+        font-size: 0.7rem;
+        transition: transform 0.2s;
+    }
+    details[open] summary::before {
+        transform: rotate(90deg);
+    }
+</style>
 {% endblock %}
