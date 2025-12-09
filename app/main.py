@@ -152,10 +152,14 @@ async def tidal_auth(request: Request):
     login, future = tidal.login_oauth()
 
     # Store the session object for later
+    verification_uri = login.verification_uri_complete
+    if not verification_uri.startswith("http"):
+        verification_uri = f"https://{verification_uri}"
+
     session["tidal_pending"] = {
         "session": tidal,
         "future": future,
-        "verification_uri": login.verification_uri_complete,
+        "verification_uri": verification_uri,
     }
 
     response = RedirectResponse("/auth/tidal/device")
