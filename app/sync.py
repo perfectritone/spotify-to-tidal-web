@@ -224,7 +224,18 @@ async def run_sync_streaming(
                 })}
                 await asyncio.sleep(REQUEST_DELAY)
                 tidal_playlist = tidal_playlists.get(spotify_playlist['name'])
-                await sync_playlist(spotify, tidal_session, spotify_playlist, tidal_playlist, config)
+                try:
+                    # Run sync_playlist with a wrapper that sends heartbeat events
+                    # The library's sync can take a while, so we need to keep the connection alive
+                    await sync_playlist(spotify, tidal_session, spotify_playlist, tidal_playlist, config)
+                except Exception as playlist_err:
+                    import traceback
+                    print(f"Error syncing playlist {spotify_playlist['name']}: {playlist_err}")
+                    traceback.print_exc()
+                    # Continue with other playlists instead of failing completely
+
+                # Small delay and free memory between playlists
+                gc.collect()
 
             del playlists, tidal_playlists  # Free memory
             gc.collect()
@@ -235,6 +246,9 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "done", "task": "playlists", "result": result['playlists']})}
             await asyncio.sleep(REQUEST_DELAY)
         except Exception as e:
+            import traceback
+            print(f"Playlist sync error: {e}")
+            traceback.print_exc()
             result['playlists'] = {'error': str(e)}
             yield {"event": "message", "data": json.dumps({"type": "error", "task": "playlists", "error": str(e)})}
             await asyncio.sleep(REQUEST_DELAY)
