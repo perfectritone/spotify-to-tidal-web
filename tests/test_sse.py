@@ -14,28 +14,29 @@ class TestSyncStreaming:
         """Should yield start events for each enabled sync type."""
         from app.sync import run_sync_streaming
 
+        # Helper to create an async generator that yields nothing
+        async def empty_generator():
+            return
+            yield  # Makes this a generator
+
         # Mock all the library functions
         with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
              patch('app.sync.get_all_playlists', new_callable=AsyncMock) as mock_tidal_playlists, \
              patch('app.sync.sync_playlist', new_callable=AsyncMock), \
-             patch('app.sync.fetch_spotify_saved_tracks', new_callable=AsyncMock) as mock_tracks, \
-             patch('app.sync.get_all_favorites', new_callable=AsyncMock) as mock_favorites, \
-             patch('app.sync.populate_track_match_cache'), \
-             patch('app.sync.search_new_tracks_on_tidal', new_callable=AsyncMock), \
-             patch('app.sync.fetch_spotify_saved_albums', new_callable=AsyncMock) as mock_albums, \
-             patch('app.sync.fetch_spotify_followed_artists', new_callable=AsyncMock) as mock_artists, \
+             patch('app.sync.iter_spotify_saved_tracks', return_value=empty_generator()), \
+             patch('app.sync.iter_spotify_saved_albums', return_value=empty_generator()), \
+             patch('app.sync.iter_spotify_followed_artists', return_value=empty_generator()), \
+             patch('app.sync.count_spotify_items', new_callable=AsyncMock) as mock_count, \
              patch('app.sync.REQUEST_DELAY', 0), \
              patch('app.sync.SPOTIFY_DELAY', 0), \
              patch('app.sync.read_and_clear_not_found_file', return_value=[]):
 
             mock_playlists.return_value = []
             mock_tidal_playlists.return_value = []
-            mock_tracks.return_value = []
-            mock_favorites.return_value = []
-            mock_albums.return_value = []
-            mock_artists.return_value = []
+            mock_count.return_value = 0
 
             mock_tidal = MagicMock()
+            mock_tidal.user.favorites.tracks.return_value = []
             mock_tidal.user.favorites.albums.return_value = []
             mock_tidal.user.favorites.artists.return_value = []
 

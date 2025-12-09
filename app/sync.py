@@ -1,11 +1,12 @@
 """
 Sync logic - with progress streaming for the web app.
+Memory-optimized: processes items in batches, doesn't hold full objects in memory.
 """
 
 import asyncio
+import gc
 import json
-import math
-from typing import Any, AsyncGenerator, Callable, List
+from typing import Any, AsyncGenerator, List
 
 import spotipy
 import tidalapi
@@ -16,16 +17,15 @@ from spotify_to_tidal.sync import (
     check_album_similarity,
     simple,
     normalize,
-    track_match_cache,
-    populate_track_match_cache,
-    search_new_tracks_on_tidal,
 )
-from spotify_to_tidal.tidalapi_patch import get_all_favorites, get_all_playlists
+from spotify_to_tidal.tidalapi_patch import get_all_playlists
 
 # Delay between API operations to avoid rate limiting (in seconds)
 REQUEST_DELAY = 0.5
 # Delay between Spotify API calls to avoid 429 errors
 SPOTIFY_DELAY = 0.2
+# Batch size for processing
+BATCH_SIZE = 50
 
 # File where library writes not-found songs
 NOT_FOUND_FILE = "songs not found.txt"
@@ -38,7 +38,6 @@ def read_and_clear_not_found_file() -> List[str]:
         if os.path.exists(NOT_FOUND_FILE):
             with open(NOT_FOUND_FILE, "r", encoding="utf-8") as f:
                 content = f.read()
-            # Clear the file
             os.remove(NOT_FOUND_FILE)
             return content.strip().split("\n") if content.strip() else []
     except Exception:
@@ -56,7 +55,6 @@ def format_not_found_report(result: dict) -> str:
 
     has_items = False
 
-    # Playlist tracks (from the library's file)
     if result.get("playlist_tracks_not_found"):
         has_items = True
         lines.append("-" * 40)
@@ -73,7 +71,6 @@ def format_not_found_report(result: dict) -> str:
                 lines.append(f"  • {line}")
         lines.append("")
 
-    # Liked songs
     if result.get("favorites", {}).get("not_found"):
         has_items = True
         lines.append("-" * 40)
@@ -83,7 +80,6 @@ def format_not_found_report(result: dict) -> str:
             lines.append(f"  • {track}")
         lines.append("")
 
-    # Albums
     if result.get("albums", {}).get("not_found"):
         has_items = True
         lines.append("-" * 40)
@@ -93,7 +89,6 @@ def format_not_found_report(result: dict) -> str:
             lines.append(f"  • {album}")
         lines.append("")
 
-    # Artists
     if result.get("artists", {}).get("not_found"):
         has_items = True
         lines.append("-" * 40)
@@ -112,48 +107,85 @@ def format_not_found_report(result: dict) -> str:
     return "\n".join(lines)
 
 
-async def fetch_spotify_saved_tracks(spotify: spotipy.Spotify) -> List[dict]:
-    """Fetch all saved tracks from Spotify with rate limiting."""
-    tracks = []
-    results = spotify.current_user_saved_tracks(limit=50)
-    tracks.extend([item['track'] for item in results['items'] if item['track'] is not None])
+async def iter_spotify_saved_albums(spotify: spotipy.Spotify):
+    """Yield saved albums from Spotify one at a time (memory efficient)."""
+    results = spotify.current_user_saved_albums(limit=BATCH_SIZE)
+    for item in results['items']:
+        album = item['album']
+        # Only yield the data we need
+        yield {
+            'name': album['name'],
+            'artists': [{'name': a['name']} for a in album.get('artists', [])],
+            'release_date': album.get('release_date'),
+            'total_tracks': album.get('total_tracks'),
+        }
 
     while results['next']:
         await asyncio.sleep(SPOTIFY_DELAY)
         results = spotify.next(results)
-        tracks.extend([item['track'] for item in results['items'] if item['track'] is not None])
-
-    return tracks
-
-
-async def fetch_spotify_saved_albums(spotify: spotipy.Spotify) -> List[dict]:
-    """Fetch all saved albums from Spotify with rate limiting."""
-    albums = []
-    results = spotify.current_user_saved_albums(limit=50)
-    albums.extend([item['album'] for item in results['items']])
-
-    while results['next']:
-        await asyncio.sleep(SPOTIFY_DELAY)
-        results = spotify.next(results)
-        albums.extend([item['album'] for item in results['items']])
-
-    albums.reverse()  # Chronological order
-    return albums
+        for item in results['items']:
+            album = item['album']
+            yield {
+                'name': album['name'],
+                'artists': [{'name': a['name']} for a in album.get('artists', [])],
+                'release_date': album.get('release_date'),
+                'total_tracks': album.get('total_tracks'),
+            }
 
 
-async def fetch_spotify_followed_artists(spotify: spotipy.Spotify) -> List[dict]:
-    """Fetch all followed artists from Spotify with rate limiting."""
-    artists = []
-    results = spotify.current_user_followed_artists(limit=50)
-    artists.extend(results['artists']['items'])
+async def iter_spotify_followed_artists(spotify: spotipy.Spotify):
+    """Yield followed artists from Spotify one at a time (memory efficient)."""
+    results = spotify.current_user_followed_artists(limit=BATCH_SIZE)
+    last_id = None
+    for artist in results['artists']['items']:
+        last_id = artist['id']
+        yield {'id': artist['id'], 'name': artist['name']}
 
     while results['artists']['next']:
         await asyncio.sleep(SPOTIFY_DELAY)
-        last_id = artists[-1]['id'] if artists else None
-        results = spotify.current_user_followed_artists(limit=50, after=last_id)
-        artists.extend(results['artists']['items'])
+        results = spotify.current_user_followed_artists(limit=BATCH_SIZE, after=last_id)
+        for artist in results['artists']['items']:
+            last_id = artist['id']
+            yield {'id': artist['id'], 'name': artist['name']}
 
-    return artists
+
+async def iter_spotify_saved_tracks(spotify: spotipy.Spotify):
+    """Yield saved tracks from Spotify one at a time (memory efficient)."""
+    results = spotify.current_user_saved_tracks(limit=BATCH_SIZE)
+    for item in results['items']:
+        track = item.get('track')
+        if track:
+            yield {
+                'id': track['id'],
+                'name': track['name'],
+                'artists': [{'name': a['name']} for a in track.get('artists', [])],
+            }
+
+    while results['next']:
+        await asyncio.sleep(SPOTIFY_DELAY)
+        results = spotify.next(results)
+        for item in results['items']:
+            track = item.get('track')
+            if track:
+                yield {
+                    'id': track['id'],
+                    'name': track['name'],
+                    'artists': [{'name': a['name']} for a in track.get('artists', [])],
+                }
+
+
+async def count_spotify_items(spotify: spotipy.Spotify, item_type: str) -> int:
+    """Get count of items without loading all data."""
+    if item_type == 'tracks':
+        results = spotify.current_user_saved_tracks(limit=1)
+        return results.get('total', 0)
+    elif item_type == 'albums':
+        results = spotify.current_user_saved_albums(limit=1)
+        return results.get('total', 0)
+    elif item_type == 'artists':
+        results = spotify.current_user_followed_artists(limit=1)
+        return results.get('artists', {}).get('total', 0)
+    return 0
 
 
 async def run_sync_streaming(
@@ -169,33 +201,15 @@ async def run_sync_streaming(
     config = {}
     result = {}
 
-    # Progress callback that yields SSE events
-    async def make_progress(task: str, event_type: str, percent: int, item: str = ""):
-        pass  # This will be replaced by yielding
-
-    # We need a different approach - collect events in a queue
-    event_queue = asyncio.Queue()
-
-    async def progress_callback(task: str, event_type: str, percent: int, item: str = ""):
-        await event_queue.put({
-            "event": "message",
-            "data": json.dumps({
-                "type": event_type,
-                "task": task,
-                "percent": percent,
-                "item": item,
-            })
-        })
-
-    # Playlists - we can show per-playlist progress
+    # Playlists
     if sync_playlists:
         yield {"event": "message", "data": json.dumps({"type": "start", "task": "playlists", "label": "Playlists"})}
         await asyncio.sleep(REQUEST_DELAY)
         try:
             playlists = await get_playlists_from_spotify(spotify, config)
-            # Get Tidal playlists (await directly instead of using wrapper with asyncio.run)
             tidal_playlist_list = await get_all_playlists(tidal_session.user)
             tidal_playlists = {p.name: p for p in tidal_playlist_list}
+            del tidal_playlist_list  # Free memory
             total = len(playlists)
 
             for i, spotify_playlist in enumerate(playlists):
@@ -212,7 +226,9 @@ async def run_sync_streaming(
                 tidal_playlist = tidal_playlists.get(spotify_playlist['name'])
                 await sync_playlist(spotify, tidal_session, spotify_playlist, tidal_playlist, config)
 
-            # Read any not-found tracks from the library's file
+            del playlists, tidal_playlists  # Free memory
+            gc.collect()
+
             playlist_not_found = read_and_clear_not_found_file()
             result['playlists'] = {'synced': total, 'not_found': playlist_not_found}
             result['playlist_tracks_not_found'] = playlist_not_found
@@ -223,66 +239,73 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "error", "task": "playlists", "error": str(e)})}
             await asyncio.sleep(REQUEST_DELAY)
 
-    # Favorites - with granular progress
+    # Favorites - process in batches
     if do_sync_favorites:
         yield {"event": "message", "data": json.dumps({"type": "start", "task": "favorites", "label": "Liked Songs"})}
         await asyncio.sleep(REQUEST_DELAY)
         try:
-            # Use inline progress reporting
-            # Step 1: Fetch from Spotify (sequential to avoid rate limits)
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 5, "item": "Loading from Spotify..."})}
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 5, "item": "Counting tracks..."})}
+            total_tracks = await count_spotify_items(spotify, 'tracks')
 
-            spotify_tracks = await fetch_spotify_saved_tracks(spotify)
-            spotify_tracks.reverse()
-            total_tracks = len(spotify_tracks)
-
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 15, "item": f"Found {total_tracks} tracks"})}
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 10, "item": f"Found {total_tracks} tracks"})}
             await asyncio.sleep(REQUEST_DELAY)
 
-            # Step 2: Fetch existing from Tidal
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 20, "item": "Loading Tidal favorites..."})}
-            old_tidal_tracks = await get_all_favorites(tidal_session.user.favorites, order='DATE')
+            # Get existing Tidal favorites (just IDs)
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 15, "item": "Loading Tidal favorites..."})}
+            existing_tidal_ids = set()
+            try:
+                tidal_favorites = tidal_session.user.favorites.tracks(limit=9999)
+                for track in tidal_favorites:
+                    existing_tidal_ids.add(track.id)
+                del tidal_favorites
+            except Exception:
+                pass
 
-            # Step 3: Match existing
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 25, "item": "Matching tracks..."})}
-            populate_track_match_cache(spotify_tracks, old_tidal_tracks)
-
-            # Step 4: Search Tidal
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 30, "item": "Searching Tidal..."})}
-            await search_new_tracks_on_tidal(tidal_session, spotify_tracks, "Favorites", config)
-
-            # Read not-found tracks from library's file (written by search_new_tracks_on_tidal)
-            favorites_not_found = read_and_clear_not_found_file()
-
-            # Step 5: Get new tracks
-            existing_favorite_ids = set([track.id for track in old_tidal_tracks])
-            new_ids = []
-            for spotify_track in spotify_tracks:
-                if spotify_track.get('id'):
-                    match_id = track_match_cache.get(spotify_track['id'])
-                    if match_id and match_id not in existing_favorite_ids:
-                        new_ids.append(match_id)
-
-            # Step 6: Add tracks
+            # Process tracks in streaming fashion
             added = 0
-            total_to_add = len(new_ids)
-            if total_to_add > 0:
-                for i, tidal_id in enumerate(new_ids):
-                    try:
-                        tidal_session.user.favorites.add_track(tidal_id)
-                        added += 1
-                    except Exception:
-                        pass
-                    pct = 50 + int((i + 1) / total_to_add * 50)
-                    yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": pct, "item": f"Adding {i+1}/{total_to_add}"})}
-                    await asyncio.sleep(REQUEST_DELAY)
+            not_found = []
+            processed = 0
 
-            # Parse the not-found file content (filter out headers)
-            favorites_not_found_clean = [
-                line for line in favorites_not_found
-                if line and not line.startswith('=') and not line.startswith('Playlist:') and line.strip()
-            ]
-            result['favorites'] = {'added': added, 'total': total_tracks, 'not_found': favorites_not_found_clean}
+            async for track in iter_spotify_saved_tracks(spotify):
+                processed += 1
+                pct = 20 + int(processed / max(total_tracks, 1) * 75)
+
+                if processed % 10 == 0:
+                    yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": pct, "item": f"Processing {processed}/{total_tracks}"})}
+
+                # Search for track on Tidal
+                artist_name = track['artists'][0]['name'] if track.get('artists') else ''
+                query = f"{simple(track['name'])} {simple(artist_name)}"
+
+                try:
+                    search_results = tidal_session.search(query, models=[tidalapi.media.Track], limit=5)
+                    matched = False
+
+                    for tidal_track in search_results.get('tracks', [])[:5]:
+                        # Simple name matching
+                        if (normalize(simple(tidal_track.name.lower())) == normalize(simple(track['name'].lower())) and
+                            tidal_track.id not in existing_tidal_ids):
+                            try:
+                                tidal_session.user.favorites.add_track(tidal_track.id)
+                                existing_tidal_ids.add(tidal_track.id)
+                                added += 1
+                            except Exception:
+                                pass
+                            matched = True
+                            break
+                        elif tidal_track.id in existing_tidal_ids:
+                            matched = True
+                            break
+
+                    if not matched:
+                        not_found.append(f"{artist_name} - {track['name']}")
+                except Exception:
+                    not_found.append(f"{artist_name} - {track['name']}")
+
+                await asyncio.sleep(REQUEST_DELAY)
+
+            gc.collect()
+            result['favorites'] = {'added': added, 'total': total_tracks, 'not_found': not_found}
             yield {"event": "message", "data": json.dumps({"type": "done", "task": "favorites", "result": result['favorites']})}
             await asyncio.sleep(REQUEST_DELAY)
         except Exception as e:
@@ -290,45 +313,46 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "error", "task": "favorites", "error": str(e)})}
             await asyncio.sleep(REQUEST_DELAY)
 
-    # Albums - with granular progress
+    # Albums - stream and process one at a time
     if do_sync_albums:
         yield {"event": "message", "data": json.dumps({"type": "start", "task": "albums", "label": "Albums"})}
         await asyncio.sleep(REQUEST_DELAY)
         try:
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 5, "item": "Loading from Spotify..."})}
-            spotify_albums = await fetch_spotify_saved_albums(spotify)
-            total_albums = len(spotify_albums)
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 5, "item": "Counting albums..."})}
+            total_albums = await count_spotify_items(spotify, 'albums')
 
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 15, "item": f"Found {total_albums} albums"})}
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 10, "item": f"Found {total_albums} albums"})}
             await asyncio.sleep(REQUEST_DELAY)
 
-            # Get existing Tidal albums
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 18, "item": "Loading Tidal albums..."})}
+            # Get existing Tidal albums (just IDs)
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 15, "item": "Loading Tidal albums..."})}
             tidal_favorite_albums = set()
             try:
-                tidal_albums = tidal_session.user.favorites.albums()
+                tidal_albums = tidal_session.user.favorites.albums(limit=9999)
                 for album in tidal_albums:
                     tidal_favorite_albums.add(album.id)
+                del tidal_albums
             except Exception:
                 pass
 
-            # Sync each album
             added = 0
             not_found = []
+            processed = 0
 
-            for i, spotify_album in enumerate(spotify_albums):
+            async for spotify_album in iter_spotify_saved_albums(spotify):
+                processed += 1
                 album_name = spotify_album['name']
                 artist_name = spotify_album['artists'][0]['name'] if spotify_album.get('artists') else ''
 
-                pct = 20 + int((i + 1) / total_albums * 80) if total_albums > 0 else 100
-                yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": pct, "item": f"{i+1}/{total_albums}: {album_name[:25]}"})}
+                pct = 20 + int(processed / max(total_albums, 1) * 80)
+                yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": pct, "item": f"{processed}/{total_albums}: {album_name[:25]}"})}
 
                 query = f"{simple(album_name)} {simple(artist_name)}"
                 try:
-                    search_results = tidal_session.search(query, models=[tidalapi.album.Album])
+                    search_results = tidal_session.search(query, models=[tidalapi.album.Album], limit=5)
                     matched = False
 
-                    for tidal_album in search_results.get('albums', []):
+                    for tidal_album in search_results.get('albums', [])[:5]:
                         if check_album_similarity(spotify_album, tidal_album):
                             if tidal_album.id not in tidal_favorite_albums:
                                 try:
@@ -347,6 +371,7 @@ async def run_sync_streaming(
 
                 await asyncio.sleep(REQUEST_DELAY)
 
+            gc.collect()
             result['albums'] = {'added': added, 'total': total_albums, 'not_found': not_found}
             yield {"event": "message", "data": json.dumps({"type": "done", "task": "albums", "result": result['albums']})}
             await asyncio.sleep(REQUEST_DELAY)
@@ -355,44 +380,45 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "error", "task": "albums", "error": str(e)})}
             await asyncio.sleep(REQUEST_DELAY)
 
-    # Artists - with granular progress
+    # Artists - stream and process one at a time
     if do_sync_artists:
         yield {"event": "message", "data": json.dumps({"type": "start", "task": "artists", "label": "Artists"})}
         await asyncio.sleep(REQUEST_DELAY)
         try:
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 5, "item": "Loading from Spotify..."})}
-            spotify_artists = await fetch_spotify_followed_artists(spotify)
-            total_artists = len(spotify_artists)
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 5, "item": "Counting artists..."})}
+            total_artists = await count_spotify_items(spotify, 'artists')
 
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 15, "item": f"Found {total_artists} artists"})}
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 10, "item": f"Found {total_artists} artists"})}
             await asyncio.sleep(REQUEST_DELAY)
 
-            # Get existing Tidal artists
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 18, "item": "Loading Tidal artists..."})}
+            # Get existing Tidal artists (just IDs)
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 15, "item": "Loading Tidal artists..."})}
             tidal_favorite_artists = set()
             try:
-                tidal_artists = tidal_session.user.favorites.artists()
+                tidal_artists = tidal_session.user.favorites.artists(limit=9999)
                 for artist in tidal_artists:
                     tidal_favorite_artists.add(artist.id)
+                del tidal_artists
             except Exception:
                 pass
 
-            # Sync each artist
             added = 0
             not_found = []
+            processed = 0
 
-            for i, spotify_artist in enumerate(spotify_artists):
+            async for spotify_artist in iter_spotify_followed_artists(spotify):
+                processed += 1
                 artist_name = spotify_artist['name']
 
-                pct = 20 + int((i + 1) / total_artists * 80) if total_artists > 0 else 100
-                yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": pct, "item": f"{i+1}/{total_artists}: {artist_name[:25]}"})}
+                pct = 20 + int(processed / max(total_artists, 1) * 80)
+                yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": pct, "item": f"{processed}/{total_artists}: {artist_name[:25]}"})}
 
                 query = simple(artist_name)
                 try:
-                    search_results = tidal_session.search(query, models=[tidalapi.artist.Artist])
+                    search_results = tidal_session.search(query, models=[tidalapi.artist.Artist], limit=5)
                     matched = False
 
-                    for tidal_artist in search_results.get('artists', []):
+                    for tidal_artist in search_results.get('artists', [])[:5]:
                         if normalize(simple(tidal_artist.name.lower())) == normalize(simple(artist_name.lower())):
                             if tidal_artist.id not in tidal_favorite_artists:
                                 try:
@@ -411,6 +437,7 @@ async def run_sync_streaming(
 
                 await asyncio.sleep(REQUEST_DELAY)
 
+            gc.collect()
             result['artists'] = {'added': added, 'total': total_artists, 'not_found': not_found}
             yield {"event": "message", "data": json.dumps({"type": "done", "task": "artists", "result": result['artists']})}
             await asyncio.sleep(REQUEST_DELAY)
