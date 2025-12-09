@@ -271,14 +271,23 @@ function showResults() {
 
     // Show not found items
     const notFoundSections = [];
+
+    // Playlist tracks (parse the file format)
+    if (syncResult.playlist_tracks_not_found?.length) {
+        // Filter out header lines and format nicely
+        const tracks = syncResult.playlist_tracks_not_found.filter(line =>
+            line && !line.startsWith('=') && !line.startsWith('Playlist:') && line.trim()
+        );
+        if (tracks.length > 0) {
+            notFoundSections.push({icon: '🎵', title: 'Playlist Tracks', items: tracks});
+        }
+    }
+
     if (syncResult.albums?.not_found?.length) {
         notFoundSections.push({icon: '💿', title: 'Albums', items: syncResult.albums.not_found});
     }
     if (syncResult.artists?.not_found?.length) {
         notFoundSections.push({icon: '🎤', title: 'Artists', items: syncResult.artists.not_found});
-    }
-    if (syncResult.playlists?.not_found?.length) {
-        notFoundSections.push({icon: '🎵', title: 'Playlist Tracks', items: syncResult.playlists.not_found});
     }
     if (syncResult.favorites?.not_found?.length) {
         notFoundSections.push({icon: '❤️', title: 'Liked Songs', items: syncResult.favorites.not_found});
@@ -297,14 +306,39 @@ function showResults() {
                     <span class="section-count">${section.items.length}</span>
                 </summary>
                 <ul class="not-found-list">
-                    ${section.items.map(item => `<li>${item}</li>`).join('')}
+                    ${section.items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
                 </ul>
             </details>`;
         });
+
+        // Download button
+        html += `<button onclick="downloadReport()" class="btn-download">Download Report (.txt)</button>`;
         html += '</div>';
     }
 
     resultContent.innerHTML = html;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function downloadReport() {
+    if (!syncResult.not_found_report) {
+        alert('No report available');
+        return;
+    }
+    const blob = new Blob([syncResult.not_found_report], {type: 'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'spotify-to-tidal-not-found.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 function resetSync() {
@@ -425,6 +459,22 @@ document.getElementById('sync-form')?.addEventListener('submit', function(e) {
     }
     details[open] summary::before {
         transform: rotate(90deg);
+    }
+    .btn-download {
+        display: block;
+        width: 100%;
+        margin-top: 1rem;
+        padding: 0.6rem 1rem;
+        background: #333;
+        color: #fff;
+        border: 1px solid #444;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: background 0.2s;
+    }
+    .btn-download:hover {
+        background: #444;
     }
 </style>
 {% endblock %}
