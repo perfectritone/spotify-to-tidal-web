@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer
 
-from fastapi.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 from .sync import run_sync, run_sync_streaming
 
 # Config from environment (host sets these once)
@@ -240,12 +240,10 @@ async def sync_stream(
         ):
             yield event
 
-    return StreamingResponse(
+    return EventSourceResponse(
         generate(),
-        media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         }
     )
