@@ -10,7 +10,6 @@ import os
 from typing import Any, AsyncGenerator, List, Optional
 
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
 import tidalapi
 
@@ -44,31 +43,72 @@ def is_auth_error(e: Exception) -> bool:
     return False
 
 
+def refresh_spotify_token(refresh_token: str) -> Optional[str]:
+    """Manually refresh a Spotify access token."""
+    import httpx
+
+    client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
+    client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+
+    if not client_id or not client_secret:
+        return None
+
+    try:
+        response = httpx.post(
+            "https://accounts.spotify.com/api/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            auth=(client_id, client_secret),
+            timeout=10,
+        )
+        if response.status_code == 200:
+            return response.json().get("access_token")
+    except Exception as e:
+        print(f"Token refresh failed: {e}")
+    return None
+
+
+class RefreshableSpotify:
+    """Wrapper around spotipy that handles token refresh on 401."""
+
+    def __init__(self, access_token: str, refresh_token: Optional[str] = None):
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+        self._client = spotipy.Spotify(auth=access_token)
+
+    def _refresh_and_retry(self, method_name: str, *args, **kwargs):
+        """Try to refresh token and retry the request."""
+        if self.refresh_token:
+            new_token = refresh_spotify_token(self.refresh_token)
+            if new_token:
+                self.access_token = new_token
+                self._client = spotipy.Spotify(auth=new_token)
+                return getattr(self._client, method_name)(*args, **kwargs)
+        raise
+
+    def __getattr__(self, name):
+        """Proxy method calls to the underlying client, with retry on 401."""
+        attr = getattr(self._client, name)
+        if not callable(attr):
+            return attr
+
+        def wrapper(*args, **kwargs):
+            try:
+                return attr(*args, **kwargs)
+            except SpotifyException as e:
+                if e.http_status == 401 and self.refresh_token:
+                    return self._refresh_and_retry(name, *args, **kwargs)
+                raise
+
+        return wrapper
+
+
 def create_spotify_client(access_token: str, refresh_token: Optional[str] = None) -> spotipy.Spotify:
     """Create a Spotify client with token refresh support."""
     if refresh_token:
-        # Use OAuth manager for auto-refresh
-        client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
-        client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
-
-        if client_id and client_secret:
-            auth_manager = SpotifyOAuth(
-                client_id=client_id,
-                client_secret=client_secret,
-                redirect_uri="http://localhost:8000/callback",  # Not used for refresh
-                scope="user-library-read playlist-read-private",
-            )
-            # Inject the token info so it can refresh
-            auth_manager.token_info = {
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "token_type": "Bearer",
-                "expires_in": 3600,
-                "expires_at": 0,  # Force refresh on first use if expired
-            }
-            return spotipy.Spotify(auth_manager=auth_manager)
-
-    # Fallback to simple token auth (no refresh)
+        return RefreshableSpotify(access_token, refresh_token)
     return spotipy.Spotify(auth=access_token)
 
 
