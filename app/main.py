@@ -393,5 +393,11 @@ async def logout(request: Request):
     return response
 
 
+@app.get("/ping")
+async def ping():
+    """Simple ping endpoint to keep Fly.io machine active during long operations."""
+    return {"status": "ok"}
+
+
 # Keep sessions dict for test compatibility
 sessions: dict[str, dict] = {}

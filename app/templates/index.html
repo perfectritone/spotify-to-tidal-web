@@ -152,6 +152,21 @@
 
 <script>
 let syncResult = {};
+let pingInterval = null;
+
+function startPinging() {
+    // Ping every 15 seconds to keep Fly.io machine active
+    pingInterval = setInterval(() => {
+        fetch('/ping').catch(() => {});
+    }, 15000);
+}
+
+function stopPinging() {
+    if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+    }
+}
 
 function startSync() {
     const form = document.getElementById('sync-form');
@@ -186,6 +201,9 @@ function startSync() {
 
     syncResult = {};
 
+    // Start pinging to keep Fly.io machine active
+    startPinging();
+
     // Start SSE connection
     const eventSource = new EventSource(`/sync/stream?${params.toString()}`);
 
@@ -195,6 +213,7 @@ function startSync() {
 
         if (data.type === 'complete') {
             eventSource.close();
+            stopPinging();
             showResults();
         }
     };
@@ -202,6 +221,7 @@ function startSync() {
     eventSource.onerror = function(e) {
         console.error('SSE connection error:', e);
         eventSource.close();
+        stopPinging();
 
         // Mark any in-progress items as errored
         ['playlists', 'favorites', 'albums', 'artists'].forEach(task => {
