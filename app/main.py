@@ -339,6 +339,7 @@ async def sync_stream(
             do_sync_albums=albums,
             do_sync_artists=artists,
             do_sync_favorites=favorites,
+            spotify_refresh_token=spotify.get("refresh_token"),
         ):
             yield event
 
@@ -375,6 +376,7 @@ async def sync(request: Request):
         do_sync_albums=sync_albums,
         do_sync_artists=sync_artists,
         do_sync_favorites=sync_favorites,
+        spotify_refresh_token=spotify.get("refresh_token"),
     )
 
     return templates.TemplateResponse("result.html", {

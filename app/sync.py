@@ -6,9 +6,11 @@ Memory-optimized: processes items in batches, doesn't hold full objects in memor
 import asyncio
 import gc
 import json
-from typing import Any, AsyncGenerator, List
+import os
+from typing import Any, AsyncGenerator, List, Optional
 
 import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 import tidalapi
 
 from spotify_to_tidal.sync import (
@@ -29,6 +31,34 @@ BATCH_SIZE = 50
 
 # File where library writes not-found songs
 NOT_FOUND_FILE = "songs not found.txt"
+
+
+def create_spotify_client(access_token: str, refresh_token: Optional[str] = None) -> spotipy.Spotify:
+    """Create a Spotify client with token refresh support."""
+    if refresh_token:
+        # Use OAuth manager for auto-refresh
+        client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
+        client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+
+        if client_id and client_secret:
+            auth_manager = SpotifyOAuth(
+                client_id=client_id,
+                client_secret=client_secret,
+                redirect_uri="http://localhost:8000/callback",  # Not used for refresh
+                scope="user-library-read playlist-read-private",
+            )
+            # Inject the token info so it can refresh
+            auth_manager.token_info = {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "expires_at": 0,  # Force refresh on first use if expired
+            }
+            return spotipy.Spotify(auth_manager=auth_manager)
+
+    # Fallback to simple token auth (no refresh)
+    return spotipy.Spotify(auth=access_token)
 
 
 def read_and_clear_not_found_file() -> List[str]:
@@ -195,9 +225,10 @@ async def run_sync_streaming(
     do_sync_albums: bool = True,
     do_sync_artists: bool = True,
     do_sync_favorites: bool = True,
+    spotify_refresh_token: Optional[str] = None,
 ) -> AsyncGenerator[dict, None]:
     """Run the full sync process, yielding progress events as dicts."""
-    spotify = spotipy.Spotify(auth=spotify_token)
+    spotify = create_spotify_client(spotify_token, spotify_refresh_token)
     config = {}
     result = {}
 
@@ -504,12 +535,14 @@ async def run_sync(
     do_sync_albums: bool = True,
     do_sync_artists: bool = True,
     do_sync_favorites: bool = True,
+    spotify_refresh_token: Optional[str] = None,
 ) -> dict[str, Any]:
     """Run the full sync process (non-streaming version)."""
     result = {}
     async for event in run_sync_streaming(
         spotify_token, tidal_session,
-        sync_playlists, do_sync_albums, do_sync_artists, do_sync_favorites
+        sync_playlists, do_sync_albums, do_sync_artists, do_sync_favorites,
+        spotify_refresh_token=spotify_refresh_token,
     ):
         data = json.loads(event["data"])
         if data.get("type") == "complete":
