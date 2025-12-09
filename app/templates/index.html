@@ -269,6 +269,41 @@ function showResults() {
     }
     html += '</div>';
 
+    // Show not found items
+    const notFoundSections = [];
+    if (syncResult.albums?.not_found?.length) {
+        notFoundSections.push({icon: '💿', title: 'Albums', items: syncResult.albums.not_found});
+    }
+    if (syncResult.artists?.not_found?.length) {
+        notFoundSections.push({icon: '🎤', title: 'Artists', items: syncResult.artists.not_found});
+    }
+    if (syncResult.playlists?.not_found?.length) {
+        notFoundSections.push({icon: '🎵', title: 'Playlist Tracks', items: syncResult.playlists.not_found});
+    }
+    if (syncResult.favorites?.not_found?.length) {
+        notFoundSections.push({icon: '❤️', title: 'Liked Songs', items: syncResult.favorites.not_found});
+    }
+
+    if (notFoundSections.length > 0) {
+        html += `<div class="not-found-card">
+            <h4 style="color: #e74c3c; margin: 1rem 0 0.5rem;">Not Found on Tidal</h4>
+            <p style="color: #888; font-size: 0.8rem; margin-bottom: 1rem;">These items may not be available or have different names.</p>`;
+
+        notFoundSections.forEach(section => {
+            html += `<details class="not-found-section">
+                <summary>
+                    <span class="section-icon">${section.icon}</span>
+                    <span class="section-title">${section.title}</span>
+                    <span class="section-count">${section.items.length}</span>
+                </summary>
+                <ul class="not-found-list">
+                    ${section.items.map(item => `<li>${item}</li>`).join('')}
+                </ul>
+            </details>`;
+        });
+        html += '</div>';
+    }
+
     resultContent.innerHTML = html;
 }
 
@@ -321,6 +356,75 @@ document.getElementById('sync-form')?.addEventListener('submit', function(e) {
         font-size: 0.7rem;
         color: #b3b3b3;
         text-transform: uppercase;
+    }
+    .not-found-card {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid #333;
+    }
+    .not-found-section {
+        margin-bottom: 0.5rem;
+        border: 1px solid #333;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    .not-found-section summary {
+        display: flex;
+        align-items: center;
+        padding: 0.6rem 0.8rem;
+        background: #1a1a1a;
+        cursor: pointer;
+        user-select: none;
+        font-size: 0.9rem;
+    }
+    .not-found-section summary:hover {
+        background: #222;
+    }
+    .not-found-section[open] summary {
+        border-bottom: 1px solid #333;
+    }
+    .section-icon {
+        margin-right: 0.6rem;
+    }
+    .section-title {
+        flex: 1;
+        font-weight: 500;
+    }
+    .section-count {
+        background: #e74c3c;
+        color: #fff;
+        padding: 0.1rem 0.4rem;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+    .not-found-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    .not-found-list li {
+        padding: 0.4rem 0.8rem;
+        border-bottom: 1px solid #222;
+        color: #999;
+        font-size: 0.8rem;
+    }
+    .not-found-list li:last-child {
+        border-bottom: none;
+    }
+    details summary::-webkit-details-marker {
+        display: none;
+    }
+    details summary::before {
+        content: "▶";
+        margin-right: 0.4rem;
+        font-size: 0.6rem;
+        transition: transform 0.2s;
+    }
+    details[open] summary::before {
+        transform: rotate(90deg);
     }
 </style>
 {% endblock %}

@@ -18,17 +18,18 @@ class TestSyncStreaming:
         with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
              patch('app.sync.get_tidal_playlists_wrapper') as mock_tidal_playlists, \
              patch('app.sync.sync_playlist', new_callable=AsyncMock), \
-             patch('app.sync.repeat_on_request_error', new_callable=AsyncMock) as mock_repeat, \
+             patch('app.sync.fetch_spotify_saved_tracks', new_callable=AsyncMock) as mock_tracks, \
              patch('app.sync.get_all_favorites', new_callable=AsyncMock) as mock_favorites, \
              patch('app.sync.populate_track_match_cache'), \
              patch('app.sync.search_new_tracks_on_tidal', new_callable=AsyncMock), \
-             patch('app.sync.get_albums_from_spotify', new_callable=AsyncMock) as mock_albums, \
-             patch('app.sync.get_artists_from_spotify', new_callable=AsyncMock) as mock_artists, \
-             patch('app.sync.REQUEST_DELAY', 0):  # No delay for tests
+             patch('app.sync.fetch_spotify_saved_albums', new_callable=AsyncMock) as mock_albums, \
+             patch('app.sync.fetch_spotify_followed_artists', new_callable=AsyncMock) as mock_artists, \
+             patch('app.sync.REQUEST_DELAY', 0), \
+             patch('app.sync.SPOTIFY_DELAY', 0):
 
             mock_playlists.return_value = []
             mock_tidal_playlists.return_value = {}
-            mock_repeat.return_value = []
+            mock_tracks.return_value = []
             mock_favorites.return_value = []
             mock_albums.return_value = []
             mock_artists.return_value = []

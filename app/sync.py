@@ -4,7 +4,8 @@ Sync logic - with progress streaming for the web app.
 
 import asyncio
 import json
-from typing import Any, AsyncGenerator
+import math
+from typing import Any, AsyncGenerator, Callable, List
 
 import spotipy
 import tidalapi
@@ -13,21 +14,63 @@ from spotify_to_tidal.sync import (
     sync_playlist,
     get_playlists_from_spotify,
     get_tidal_playlists_wrapper,
-    get_albums_from_spotify,
-    get_artists_from_spotify,
     check_album_similarity,
     simple,
     normalize,
     track_match_cache,
     populate_track_match_cache,
     search_new_tracks_on_tidal,
-    repeat_on_request_error,
-    _fetch_all_from_spotify_in_chunks,
 )
 from spotify_to_tidal.tidalapi_patch import get_all_favorites
 
 # Delay between API operations to avoid rate limiting (in seconds)
-REQUEST_DELAY = 0.3
+REQUEST_DELAY = 0.5
+# Delay between Spotify API calls to avoid 429 errors
+SPOTIFY_DELAY = 0.2
+
+
+async def fetch_spotify_saved_tracks(spotify: spotipy.Spotify) -> List[dict]:
+    """Fetch all saved tracks from Spotify with rate limiting."""
+    tracks = []
+    results = spotify.current_user_saved_tracks(limit=50)
+    tracks.extend([item['track'] for item in results['items'] if item['track'] is not None])
+
+    while results['next']:
+        await asyncio.sleep(SPOTIFY_DELAY)
+        results = spotify.next(results)
+        tracks.extend([item['track'] for item in results['items'] if item['track'] is not None])
+
+    return tracks
+
+
+async def fetch_spotify_saved_albums(spotify: spotipy.Spotify) -> List[dict]:
+    """Fetch all saved albums from Spotify with rate limiting."""
+    albums = []
+    results = spotify.current_user_saved_albums(limit=50)
+    albums.extend([item['album'] for item in results['items']])
+
+    while results['next']:
+        await asyncio.sleep(SPOTIFY_DELAY)
+        results = spotify.next(results)
+        albums.extend([item['album'] for item in results['items']])
+
+    albums.reverse()  # Chronological order
+    return albums
+
+
+async def fetch_spotify_followed_artists(spotify: spotipy.Spotify) -> List[dict]:
+    """Fetch all followed artists from Spotify with rate limiting."""
+    artists = []
+    results = spotify.current_user_followed_artists(limit=50)
+    artists.extend(results['artists']['items'])
+
+    while results['artists']['next']:
+        await asyncio.sleep(SPOTIFY_DELAY)
+        last_id = artists[-1]['id'] if artists else None
+        results = spotify.current_user_followed_artists(limit=50, after=last_id)
+        artists.extend(results['artists']['items'])
+
+    return artists
 
 
 async def sync_favorites_with_progress(
@@ -280,11 +323,10 @@ async def run_sync_streaming(
         await asyncio.sleep(REQUEST_DELAY)
         try:
             # Use inline progress reporting
-            # Step 1: Fetch from Spotify
+            # Step 1: Fetch from Spotify (sequential to avoid rate limits)
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 5, "item": "Loading from Spotify..."})}
 
-            _get_favorite_tracks = lambda offset: spotify.current_user_saved_tracks(offset=offset)
-            spotify_tracks = await repeat_on_request_error(_fetch_all_from_spotify_in_chunks, _get_favorite_tracks)
+            spotify_tracks = await fetch_spotify_saved_tracks(spotify)
             spotify_tracks.reverse()
             total_tracks = len(spotify_tracks)
 
@@ -340,7 +382,7 @@ async def run_sync_streaming(
         await asyncio.sleep(REQUEST_DELAY)
         try:
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 5, "item": "Loading from Spotify..."})}
-            spotify_albums = await get_albums_from_spotify(spotify)
+            spotify_albums = await fetch_spotify_saved_albums(spotify)
             total_albums = len(spotify_albums)
 
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 15, "item": f"Found {total_albums} albums"})}
@@ -405,7 +447,7 @@ async def run_sync_streaming(
         await asyncio.sleep(REQUEST_DELAY)
         try:
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 5, "item": "Loading from Spotify..."})}
-            spotify_artists = await get_artists_from_spotify(spotify)
+            spotify_artists = await fetch_spotify_followed_artists(spotify)
             total_artists = len(spotify_artists)
 
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 15, "item": f"Found {total_artists} artists"})}
