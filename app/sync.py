@@ -433,6 +433,9 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 30, "item": "Searching Tidal..."})}
             await search_new_tracks_on_tidal(tidal_session, spotify_tracks, "Favorites", config)
 
+            # Read not-found tracks from library's file (written by search_new_tracks_on_tidal)
+            favorites_not_found = read_and_clear_not_found_file()
+
             # Step 5: Get new tracks
             existing_favorite_ids = set([track.id for track in old_tidal_tracks])
             new_ids = []
@@ -456,7 +459,12 @@ async def run_sync_streaming(
                     yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": pct, "item": f"Adding {i+1}/{total_to_add}"})}
                     await asyncio.sleep(REQUEST_DELAY)
 
-            result['favorites'] = {'added': added, 'total': total_tracks}
+            # Parse the not-found file content (filter out headers)
+            favorites_not_found_clean = [
+                line for line in favorites_not_found
+                if line and not line.startswith('=') and not line.startswith('Playlist:') and line.strip()
+            ]
+            result['favorites'] = {'added': added, 'total': total_tracks, 'not_found': favorites_not_found_clean}
             yield {"event": "message", "data": json.dumps({"type": "done", "task": "favorites", "result": result['favorites']})}
             await asyncio.sleep(REQUEST_DELAY)
         except Exception as e:
