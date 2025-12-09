@@ -33,31 +33,280 @@
 {% if spotify_connected and tidal_connected %}
 <div class="card">
     <h3>2. Choose What to Sync</h3>
-    <form action="/sync" method="POST">
+    <form id="sync-form">
         <div class="checkbox-group">
-            <label>
-                <input type="checkbox" name="playlists" checked>
-                Playlists
-            </label>
-            <label>
-                <input type="checkbox" name="favorites" checked>
-                Liked Songs (Favorites)
-            </label>
-            <label>
-                <input type="checkbox" name="albums" checked>
-                Saved Albums
-            </label>
-            <label>
-                <input type="checkbox" name="artists" checked>
-                Followed Artists
-            </label>
+            <div class="sync-item">
+                <label>
+                    <input type="checkbox" name="playlists" id="cb-playlists" checked>
+                    <span class="label-text">Playlists</span>
+                </label>
+                <span class="progress-info" id="progress-playlists"></span>
+            </div>
+            <div class="sync-item">
+                <label>
+                    <input type="checkbox" name="favorites" id="cb-favorites" checked>
+                    <span class="label-text">Liked Songs</span>
+                </label>
+                <span class="progress-info" id="progress-favorites"></span>
+            </div>
+            <div class="sync-item">
+                <label>
+                    <input type="checkbox" name="albums" id="cb-albums" checked>
+                    <span class="label-text">Albums</span>
+                </label>
+                <span class="progress-info" id="progress-albums"></span>
+            </div>
+            <div class="sync-item">
+                <label>
+                    <input type="checkbox" name="artists" id="cb-artists" checked>
+                    <span class="label-text">Artists</span>
+                </label>
+                <span class="progress-info" id="progress-artists"></span>
+            </div>
         </div>
-        <button type="submit" class="btn btn-sync">Start Sync</button>
+        <button type="submit" class="btn btn-sync" id="sync-btn">Start Sync</button>
     </form>
+</div>
+
+<div class="card" id="result-card" style="display: none;">
+    <h3 id="result-title">Sync Complete</h3>
+    <div id="result-content"></div>
+    <button onclick="resetSync()" class="btn btn-sync" style="margin-top: 1rem;">Sync Again</button>
 </div>
 {% endif %}
 
 <p style="margin-top: 2rem; color: #b3b3b3; font-size: 0.875rem;">
     <a href="/logout">Disconnect &amp; Start Over</a>
 </p>
+
+<style>
+    .sync-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+    }
+    .sync-item label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        flex: 1;
+    }
+    .progress-info {
+        font-size: 0.8rem;
+        color: #b3b3b3;
+        min-width: 120px;
+        text-align: right;
+    }
+    .progress-info.active {
+        color: #1db954;
+    }
+    .progress-info.done {
+        color: #1db954;
+    }
+    .progress-info.error {
+        color: #e74c3c;
+    }
+    .sync-item.syncing label {
+        color: #1db954;
+    }
+    .sync-item.done label {
+        color: #1db954;
+    }
+    .sync-item.done label::after {
+        content: " ✓";
+    }
+    .sync-item input:disabled {
+        opacity: 0.5;
+    }
+    #sync-btn:disabled {
+        background: #535353;
+        cursor: not-allowed;
+    }
+    .mini-progress {
+        display: inline-block;
+        width: 60px;
+        height: 4px;
+        background: #333;
+        border-radius: 2px;
+        overflow: hidden;
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+    .mini-progress-bar {
+        height: 100%;
+        background: #1db954;
+        transition: width 0.2s;
+    }
+</style>
+
+<script>
+let syncResult = {};
+
+function startSync() {
+    const form = document.getElementById('sync-form');
+    const btn = document.getElementById('sync-btn');
+    const checkboxes = form.querySelectorAll('input[type="checkbox"]');
+
+    // Build query params
+    const params = new URLSearchParams();
+    checkboxes.forEach(cb => {
+        if (cb.checked) {
+            params.set(cb.name, 'true');
+        }
+    });
+
+    if (!params.toString()) {
+        alert('Please select at least one item to sync');
+        return;
+    }
+
+    // Disable form
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    checkboxes.forEach(cb => cb.disabled = true);
+
+    // Reset progress displays
+    ['playlists', 'favorites', 'albums', 'artists'].forEach(task => {
+        const el = document.getElementById(`progress-${task}`);
+        el.textContent = '';
+        el.className = 'progress-info';
+        document.querySelector(`.sync-item:has(#cb-${task})`).className = 'sync-item';
+    });
+
+    syncResult = {};
+
+    // Start SSE connection
+    const eventSource = new EventSource(`/sync/stream?${params.toString()}`);
+
+    eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        handleSyncEvent(data);
+
+        if (data.type === 'complete') {
+            eventSource.close();
+            showResults();
+        }
+    };
+
+    eventSource.onerror = function() {
+        eventSource.close();
+        btn.disabled = false;
+        btn.textContent = 'Start Sync';
+        checkboxes.forEach(cb => cb.disabled = false);
+    };
+}
+
+function handleSyncEvent(data) {
+    const task = data.task;
+    const el = document.getElementById(`progress-${task}`);
+    const item = document.querySelector(`.sync-item:has(#cb-${task})`);
+
+    if (!el || !item) return;
+
+    switch (data.type) {
+        case 'start':
+            item.className = 'sync-item syncing';
+            el.className = 'progress-info active';
+            el.innerHTML = '<span class="mini-progress"><span class="mini-progress-bar" style="width: 0%"></span></span> Starting...';
+            break;
+
+        case 'progress':
+            el.innerHTML = `<span class="mini-progress"><span class="mini-progress-bar" style="width: ${data.percent}%"></span></span> ${data.percent}%`;
+            break;
+
+        case 'done':
+            item.className = 'sync-item done';
+            el.className = 'progress-info done';
+            el.textContent = 'Done';
+            syncResult[task] = data.result;
+            break;
+
+        case 'error':
+            item.className = 'sync-item';
+            el.className = 'progress-info error';
+            el.textContent = 'Error';
+            syncResult[task] = { error: data.error };
+            break;
+    }
+}
+
+function showResults() {
+    const form = document.getElementById('sync-form');
+    const resultCard = document.getElementById('result-card');
+    const resultContent = document.getElementById('result-content');
+
+    form.style.display = 'none';
+    resultCard.style.display = 'block';
+
+    let html = '<div class="stats-grid">';
+    if (syncResult.playlists && !syncResult.playlists.error) {
+        html += `<div class="stat-item"><span class="stat-number">${syncResult.playlists.synced || 0}</span><span class="stat-label">Playlists</span></div>`;
+    }
+    if (syncResult.favorites && !syncResult.favorites.error) {
+        html += `<div class="stat-item"><span class="stat-number">${syncResult.favorites.added || 0}</span><span class="stat-label">Favorites</span></div>`;
+    }
+    if (syncResult.albums && !syncResult.albums.error) {
+        html += `<div class="stat-item"><span class="stat-number">${syncResult.albums.added || 0}</span><span class="stat-label">Albums</span></div>`;
+    }
+    if (syncResult.artists && !syncResult.artists.error) {
+        html += `<div class="stat-item"><span class="stat-number">${syncResult.artists.added || 0}</span><span class="stat-label">Artists</span></div>`;
+    }
+    html += '</div>';
+
+    resultContent.innerHTML = html;
+}
+
+function resetSync() {
+    const form = document.getElementById('sync-form');
+    const resultCard = document.getElementById('result-card');
+    const btn = document.getElementById('sync-btn');
+    const checkboxes = form.querySelectorAll('input[type="checkbox"]');
+
+    form.style.display = 'block';
+    resultCard.style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = 'Start Sync';
+    checkboxes.forEach(cb => cb.disabled = false);
+
+    ['playlists', 'favorites', 'albums', 'artists'].forEach(task => {
+        const el = document.getElementById(`progress-${task}`);
+        el.textContent = '';
+        el.className = 'progress-info';
+        document.querySelector(`.sync-item:has(#cb-${task})`).className = 'sync-item';
+    });
+}
+
+document.getElementById('sync-form')?.addEventListener('submit', function(e) {
+    e.preventDefault();
+    startSync();
+});
+</script>
+
+<style>
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+        gap: 1rem;
+        text-align: center;
+    }
+    .stat-item {
+        padding: 1rem;
+        background: #1a1a1a;
+        border-radius: 8px;
+    }
+    .stat-number {
+        display: block;
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #1db954;
+    }
+    .stat-label {
+        display: block;
+        font-size: 0.7rem;
+        color: #b3b3b3;
+        text-transform: uppercase;
+    }
+</style>
 {% endblock %}

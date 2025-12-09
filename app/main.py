@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer
 
-from .sync import run_sync
+from fastapi.responses import StreamingResponse
+from .sync import run_sync, run_sync_streaming
 
 # Config from environment (host sets these once)
 SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
@@ -206,6 +207,43 @@ async def tidal_check(request: Request):
             return {"status": "error", "message": str(e)}
 
     return {"status": "pending"}
+
+
+@app.get("/sync/stream")
+async def sync_stream(
+    request: Request,
+    playlists: bool = False,
+    favorites: bool = False,
+    albums: bool = False,
+    artists: bool = False,
+):
+    """Stream sync progress via Server-Sent Events."""
+    session = get_session(request)
+
+    if "spotify_token" not in session:
+        raise HTTPException(400, "Spotify not connected")
+    if "tidal_session" not in session:
+        raise HTTPException(400, "Tidal not connected")
+
+    async def generate():
+        async for event in run_sync_streaming(
+            spotify_token=session["spotify_token"],
+            tidal_session=session["tidal_session"],
+            sync_playlists=playlists,
+            do_sync_albums=albums,
+            do_sync_artists=artists,
+            do_sync_favorites=favorites,
+        ):
+            yield event
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
 
 
 @app.post("/sync")
