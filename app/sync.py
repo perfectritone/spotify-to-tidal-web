@@ -264,16 +264,27 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 10, "item": f"Found {total_tracks} tracks"})}
             await asyncio.sleep(REQUEST_DELAY)
 
-            # Get existing Tidal favorites (just IDs)
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 15, "item": "Loading Tidal favorites..."})}
+            # Get existing Tidal favorites (just IDs) - this can be slow
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 12, "item": "Loading Tidal favorites (may take a moment)..."})}
             existing_tidal_ids = set()
             try:
-                tidal_favorites = tidal_session.user.favorites.tracks(limit=9999)
-                for track in tidal_favorites:
-                    existing_tidal_ids.add(track.id)
-                del tidal_favorites
-            except Exception:
-                pass
+                # Fetch in smaller batches to avoid timeout
+                offset = 0
+                batch_size = 100
+                while True:
+                    tidal_batch = tidal_session.user.favorites.tracks(limit=batch_size, offset=offset)
+                    if not tidal_batch:
+                        break
+                    for track in tidal_batch:
+                        existing_tidal_ids.add(track.id)
+                    if len(tidal_batch) < batch_size:
+                        break
+                    offset += batch_size
+                    # Send progress to keep connection alive
+                    yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": 15, "item": f"Loaded {len(existing_tidal_ids)} Tidal favorites..."})}
+                    await asyncio.sleep(0.1)
+            except Exception as e:
+                print(f"Error loading Tidal favorites: {e}")
 
             # Process tracks in streaming fashion
             added = 0
@@ -338,16 +349,25 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 10, "item": f"Found {total_albums} albums"})}
             await asyncio.sleep(REQUEST_DELAY)
 
-            # Get existing Tidal albums (just IDs)
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 15, "item": "Loading Tidal albums..."})}
+            # Get existing Tidal albums (just IDs) - fetch in batches
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 12, "item": "Loading Tidal albums..."})}
             tidal_favorite_albums = set()
             try:
-                tidal_albums = tidal_session.user.favorites.albums(limit=9999)
-                for album in tidal_albums:
-                    tidal_favorite_albums.add(album.id)
-                del tidal_albums
-            except Exception:
-                pass
+                offset = 0
+                batch_size = 100
+                while True:
+                    tidal_batch = tidal_session.user.favorites.albums(limit=batch_size, offset=offset)
+                    if not tidal_batch:
+                        break
+                    for album in tidal_batch:
+                        tidal_favorite_albums.add(album.id)
+                    if len(tidal_batch) < batch_size:
+                        break
+                    offset += batch_size
+                    yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": 15, "item": f"Loaded {len(tidal_favorite_albums)} Tidal albums..."})}
+                    await asyncio.sleep(0.1)
+            except Exception as e:
+                print(f"Error loading Tidal albums: {e}")
 
             added = 0
             not_found = []
@@ -405,16 +425,25 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 10, "item": f"Found {total_artists} artists"})}
             await asyncio.sleep(REQUEST_DELAY)
 
-            # Get existing Tidal artists (just IDs)
-            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 15, "item": "Loading Tidal artists..."})}
+            # Get existing Tidal artists (just IDs) - fetch in batches
+            yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 12, "item": "Loading Tidal artists..."})}
             tidal_favorite_artists = set()
             try:
-                tidal_artists = tidal_session.user.favorites.artists(limit=9999)
-                for artist in tidal_artists:
-                    tidal_favorite_artists.add(artist.id)
-                del tidal_artists
-            except Exception:
-                pass
+                offset = 0
+                batch_size = 100
+                while True:
+                    tidal_batch = tidal_session.user.favorites.artists(limit=batch_size, offset=offset)
+                    if not tidal_batch:
+                        break
+                    for artist in tidal_batch:
+                        tidal_favorite_artists.add(artist.id)
+                    if len(tidal_batch) < batch_size:
+                        break
+                    offset += batch_size
+                    yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": 15, "item": f"Loaded {len(tidal_favorite_artists)} Tidal artists..."})}
+                    await asyncio.sleep(0.1)
+            except Exception as e:
+                print(f"Error loading Tidal artists: {e}")
 
             added = 0
             not_found = []
