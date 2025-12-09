@@ -7,11 +7,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import httpx
+import tidalapi
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from itsdangerous import URLSafeTimedSerializer
+from itsdangerous import URLSafeTimedSerializer, BadSignature
 
 from sse_starlette.sse import EventSourceResponse
 from .sync import run_sync, run_sync_streaming
@@ -23,18 +24,19 @@ SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000")
 IS_PRODUCTION = BASE_URL.startswith("https://")
 
+# Cookie max age: 30 days (Tidal tokens last ~7 days, but refresh works)
+COOKIE_MAX_AGE = 30 * 24 * 3600
+
 serializer = URLSafeTimedSerializer(SECRET_KEY)
 
-# In-memory session store (use Redis in production)
-sessions: dict[str, dict] = {}
+# In-memory store only for pending Tidal auth (device flow needs future object)
+pending_tidal_auth: dict[str, dict] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     yield
-    # Shutdown
-    sessions.clear()
+    pending_tidal_auth.clear()
 
 
 app = FastAPI(title="Spotify to Tidal Sync", lifespan=lifespan)
@@ -42,40 +44,87 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 
-def get_session(request: Request) -> dict:
-    """Get or create session for request."""
-    session_id = request.cookies.get("session_id")
-    if session_id and session_id in sessions:
-        return sessions[session_id]
-    return {}
+def get_cookie_data(request: Request, name: str) -> Optional[dict]:
+    """Get and verify signed cookie data."""
+    cookie = request.cookies.get(name)
+    if not cookie:
+        return None
+    try:
+        return serializer.loads(cookie, max_age=COOKIE_MAX_AGE)
+    except BadSignature:
+        return None
 
 
-def save_session(request: Request, response, session_data: dict):
-    """Save session data, creating new session if needed."""
-    session_id = request.cookies.get("session_id")
-    if session_id and session_id in sessions:
-        sessions[session_id] = session_data
-    else:
-        session_id = secrets.token_urlsafe(32)
-        sessions[session_id] = session_data
-        response.set_cookie(
-            "session_id", session_id,
-            httponly=True,
-            secure=IS_PRODUCTION,
-            samesite="lax",
-            max_age=3600
+def set_cookie_data(response, name: str, data: dict):
+    """Set signed cookie data."""
+    signed = serializer.dumps(data)
+    response.set_cookie(
+        name, signed,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=COOKIE_MAX_AGE
+    )
+
+
+def get_spotify_session(request: Request) -> Optional[dict]:
+    """Get Spotify session from cookie."""
+    return get_cookie_data(request, "spotify_session")
+
+
+def get_tidal_session(request: Request) -> Optional[tidalapi.Session]:
+    """Reconstruct Tidal session from cookie."""
+    data = get_cookie_data(request, "tidal_session")
+    if not data:
+        return None
+
+    try:
+        tidal = tidalapi.Session()
+        tidal.load_oauth_session(
+            token_type=data["token_type"],
+            access_token=data["access_token"],
+            refresh_token=data.get("refresh_token"),
+            expiry_time=data.get("expiry_time"),
         )
+        if tidal.check_login():
+            return tidal
+    except Exception:
+        pass
+    return None
+
+
+def save_tidal_session(response, tidal: tidalapi.Session):
+    """Save Tidal session tokens to cookie."""
+    # expiry_time might be a datetime or already a string
+    expiry = tidal.expiry_time
+    if expiry and hasattr(expiry, 'isoformat'):
+        expiry = expiry.isoformat()
+
+    data = {
+        "token_type": tidal.token_type,
+        "access_token": tidal.access_token,
+        "refresh_token": tidal.refresh_token,
+        "expiry_time": expiry,
+        "user_id": str(tidal.user.id) if tidal.user else None,
+    }
+    set_cookie_data(response, "tidal_session", data)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    session = get_session(request)
+    spotify = get_spotify_session(request)
+    tidal = get_tidal_session(request)
+
+    tidal_user = None
+    if tidal and tidal.user:
+        tidal_user = tidal.user.id
+
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "spotify_connected": "spotify_token" in session,
-        "tidal_connected": "tidal_session" in session,
-        "spotify_user": session.get("spotify_user"),
-        "tidal_user": session.get("tidal_user"),
+        "spotify_connected": spotify is not None,
+        "tidal_connected": tidal is not None,
+        "spotify_user": spotify.get("user") if spotify else None,
+        "tidal_user": tidal_user,
     })
 
 
@@ -112,7 +161,7 @@ async def spotify_callback(request: Request, code: Optional[str] = None, error: 
 
     # Exchange code for token
     async with httpx.AsyncClient() as client:
-        response = await client.post(
+        resp = await client.post(
             "https://accounts.spotify.com/api/token",
             data={
                 "grant_type": "authorization_code",
@@ -122,10 +171,10 @@ async def spotify_callback(request: Request, code: Optional[str] = None, error: 
             auth=(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET),
         )
 
-        if response.status_code != 200:
+        if resp.status_code != 200:
             return RedirectResponse(f"/?error=token_exchange_failed")
 
-        token_data = response.json()
+        token_data = resp.json()
 
         # Get user info
         user_response = await client.get(
@@ -134,14 +183,15 @@ async def spotify_callback(request: Request, code: Optional[str] = None, error: 
         )
         user_data = user_response.json()
 
-    # Update session
-    session = get_session(request)
-    session["spotify_token"] = token_data["access_token"]
-    session["spotify_refresh"] = token_data.get("refresh_token")
-    session["spotify_user"] = user_data.get("display_name") or user_data.get("id")
+    # Save to cookie
+    session_data = {
+        "token": token_data["access_token"],
+        "refresh_token": token_data.get("refresh_token"),
+        "user": user_data.get("display_name") or user_data.get("id"),
+    }
 
     response = RedirectResponse("/")
-    save_session(request, response, session)
+    set_cookie_data(response, "spotify_session", session_data)
     return response
 
 
@@ -150,33 +200,33 @@ async def spotify_callback(request: Request, code: Optional[str] = None, error: 
 @app.get("/auth/tidal")
 async def tidal_auth(request: Request):
     """Start Tidal device auth flow."""
-    import tidalapi
+    # Generate a unique ID for this auth attempt
+    auth_id = secrets.token_urlsafe(16)
 
-    session = get_session(request)
     tidal = tidalapi.Session()
     login, future = tidal.login_oauth()
 
-    # Store the session object for later
     verification_uri = login.verification_uri_complete
     if not verification_uri.startswith("http"):
         verification_uri = f"https://{verification_uri}"
 
-    session["tidal_pending"] = {
+    # Store in memory (needed for the future object)
+    pending_tidal_auth[auth_id] = {
         "session": tidal,
         "future": future,
         "verification_uri": verification_uri,
     }
 
     response = RedirectResponse("/auth/tidal/device")
-    save_session(request, response, session)
+    response.set_cookie("tidal_auth_id", auth_id, httponly=True, max_age=600)
     return response
 
 
 @app.get("/auth/tidal/device", response_class=HTMLResponse)
 async def tidal_device(request: Request):
     """Show Tidal device authorization page."""
-    session = get_session(request)
-    pending = session.get("tidal_pending")
+    auth_id = request.cookies.get("tidal_auth_id")
+    pending = pending_tidal_auth.get(auth_id) if auth_id else None
 
     if not pending:
         return RedirectResponse("/")
@@ -190,8 +240,8 @@ async def tidal_device(request: Request):
 @app.get("/auth/tidal/check")
 async def tidal_check(request: Request):
     """Check if Tidal auth completed."""
-    session = get_session(request)
-    pending = session.get("tidal_pending")
+    auth_id = request.cookies.get("tidal_auth_id")
+    pending = pending_tidal_auth.get(auth_id) if auth_id else None
 
     if not pending:
         return {"status": "error", "message": "No pending auth"}
@@ -203,14 +253,65 @@ async def tidal_check(request: Request):
         try:
             future.result()
             if tidal.check_login():
-                session["tidal_session"] = tidal
-                session["tidal_user"] = tidal.user.id
-                del session["tidal_pending"]
-                return {"status": "success"}
+                # Clean up pending auth
+                del pending_tidal_auth[auth_id]
+
+                # Return success with tokens to save client-side
+                return {
+                    "status": "success",
+                    "tokens": {
+                        "token_type": tidal.token_type,
+                        "access_token": tidal.access_token,
+                        "refresh_token": tidal.refresh_token,
+                        "expiry_time": tidal.expiry_time.isoformat() if tidal.expiry_time else None,
+                        "user_id": str(tidal.user.id) if tidal.user else None,
+                    }
+                }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     return {"status": "pending"}
+
+
+@app.post("/auth/tidal/save")
+async def tidal_save(request: Request):
+    """Save Tidal tokens to cookie."""
+    import json
+
+    # Accept both JSON and form data
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        data = await request.json()
+        tokens = data.get("tokens")
+    else:
+        form = await request.form()
+        tokens_str = form.get("tokens")
+        if tokens_str:
+            tokens = json.loads(tokens_str)
+        else:
+            tokens = None
+
+    if not tokens:
+        raise HTTPException(400, "No tokens provided")
+
+    # Verify tokens work by creating a session
+    try:
+        tidal = tidalapi.Session()
+        tidal.load_oauth_session(
+            token_type=tokens["token_type"],
+            access_token=tokens["access_token"],
+            refresh_token=tokens.get("refresh_token"),
+            expiry_time=tokens.get("expiry_time"),
+        )
+        if not tidal.check_login():
+            raise HTTPException(400, "Invalid tokens")
+    except Exception as e:
+        raise HTTPException(400, f"Token validation failed: {e}")
+
+    response = RedirectResponse("/", status_code=303)
+    save_tidal_session(response, tidal)
+    response.delete_cookie("tidal_auth_id")
+    return response
 
 
 @app.get("/sync/stream")
@@ -222,17 +323,18 @@ async def sync_stream(
     artists: bool = False,
 ):
     """Stream sync progress via Server-Sent Events."""
-    session = get_session(request)
+    spotify = get_spotify_session(request)
+    tidal = get_tidal_session(request)
 
-    if "spotify_token" not in session:
+    if not spotify:
         raise HTTPException(400, "Spotify not connected")
-    if "tidal_session" not in session:
+    if not tidal:
         raise HTTPException(400, "Tidal not connected")
 
     async def generate():
         async for event in run_sync_streaming(
-            spotify_token=session["spotify_token"],
-            tidal_session=session["tidal_session"],
+            spotify_token=spotify["token"],
+            tidal_session=tidal,
             sync_playlists=playlists,
             do_sync_albums=albums,
             do_sync_artists=artists,
@@ -252,11 +354,12 @@ async def sync_stream(
 @app.post("/sync")
 async def sync(request: Request):
     """Run the sync process."""
-    session = get_session(request)
+    spotify = get_spotify_session(request)
+    tidal = get_tidal_session(request)
 
-    if "spotify_token" not in session:
+    if not spotify:
         raise HTTPException(400, "Spotify not connected")
-    if "tidal_session" not in session:
+    if not tidal:
         raise HTTPException(400, "Tidal not connected")
 
     form = await request.form()
@@ -266,8 +369,8 @@ async def sync(request: Request):
     sync_favorites = form.get("favorites") == "on"
 
     result = await run_sync(
-        spotify_token=session["spotify_token"],
-        tidal_session=session["tidal_session"],
+        spotify_token=spotify["token"],
+        tidal_session=tidal,
         sync_playlists=sync_playlists,
         do_sync_albums=sync_albums,
         do_sync_artists=sync_artists,
@@ -282,11 +385,13 @@ async def sync(request: Request):
 
 @app.get("/logout")
 async def logout(request: Request):
-    """Clear session."""
-    session_id = request.cookies.get("session_id")
-    if session_id and session_id in sessions:
-        del sessions[session_id]
-
+    """Clear session cookies."""
     response = RedirectResponse("/")
-    response.delete_cookie("session_id")
+    response.delete_cookie("spotify_session")
+    response.delete_cookie("tidal_session")
+    response.delete_cookie("tidal_auth_id")
     return response
+
+
+# Keep sessions dict for test compatibility
+sessions: dict[str, dict] = {}

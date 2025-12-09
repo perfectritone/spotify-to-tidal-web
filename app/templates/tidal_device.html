@@ -104,10 +104,21 @@
 
             if (data.status === 'success') {
                 document.getElementById('status-box').className = 'success';
-                document.getElementById('status').textContent = 'Connected! Redirecting...';
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 1000);
+                document.getElementById('status').textContent = 'Connected! Saving session...';
+
+                // Save tokens via form submission (to properly set cookies)
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/auth/tidal/save';
+
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'tokens';
+                input.value = JSON.stringify(data.tokens);
+                form.appendChild(input);
+
+                document.body.appendChild(form);
+                form.submit();
             } else if (data.status === 'error') {
                 document.getElementById('status-box').className = 'error';
                 document.getElementById('status').textContent = 'Error: ' + data.message;

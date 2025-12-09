@@ -25,7 +25,8 @@ class TestSyncStreaming:
              patch('app.sync.fetch_spotify_saved_albums', new_callable=AsyncMock) as mock_albums, \
              patch('app.sync.fetch_spotify_followed_artists', new_callable=AsyncMock) as mock_artists, \
              patch('app.sync.REQUEST_DELAY', 0), \
-             patch('app.sync.SPOTIFY_DELAY', 0):
+             patch('app.sync.SPOTIFY_DELAY', 0), \
+             patch('app.sync.read_and_clear_not_found_file', return_value=[]):
 
             mock_playlists.return_value = []
             mock_tidal_playlists.return_value = []
@@ -179,9 +180,12 @@ class TestSSEEndpoint:
 
     def test_sync_stream_requires_spotify(self, client, authenticated_session_tidal_only):
         """Should return 400 when Spotify not connected."""
-        response = client.get("/sync/stream?playlists=true")
-        assert response.status_code == 400
-        assert "Spotify" in response.json()["detail"]
+        # Mock get_tidal_session to return a mock session
+        mock_tidal = MagicMock()
+        with patch('app.main.get_tidal_session', return_value=mock_tidal):
+            response = client.get("/sync/stream?playlists=true")
+            assert response.status_code == 400
+            assert "Spotify" in response.json()["detail"]
 
     def test_sync_stream_requires_tidal(self, client, authenticated_session_spotify_only):
         """Should return 400 when Tidal not connected."""
@@ -191,7 +195,9 @@ class TestSSEEndpoint:
 
     def test_sync_stream_returns_event_stream(self, client, authenticated_session):
         """Should return text/event-stream content type."""
-        with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
+        mock_tidal = MagicMock()
+        with patch('app.main.get_tidal_session', return_value=mock_tidal), \
+             patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
              patch('app.sync.get_all_playlists', new_callable=AsyncMock) as mock_tidal_playlists, \
              patch('app.sync.REQUEST_DELAY', 0):
 
@@ -204,7 +210,9 @@ class TestSSEEndpoint:
 
     def test_sync_stream_yields_events(self, client, authenticated_session):
         """Should yield SSE events."""
-        with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
+        mock_tidal = MagicMock()
+        with patch('app.main.get_tidal_session', return_value=mock_tidal), \
+             patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
              patch('app.sync.get_all_playlists', new_callable=AsyncMock) as mock_tidal_playlists, \
              patch('app.sync.REQUEST_DELAY', 0):
 

@@ -87,10 +87,12 @@ class TestLogout:
         assert response.headers["location"] == "/"
 
     def test_logout_clears_session_cookie(self, client):
-        """Logout should clear the session cookie."""
+        """Logout should clear the session cookies."""
         response = client.get("/logout", follow_redirects=False)
-        # Cookie should be deleted (max-age=0 or expires in past)
-        assert "session_id" in response.headers.get("set-cookie", "")
+        # Cookies should be deleted (max-age=0 or expires in past)
+        cookies = response.headers.get("set-cookie", "")
+        assert "spotify_session" in cookies
+        assert "tidal_session" in cookies
 
 
 class TestSyncEndpoint:
