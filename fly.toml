@@ -1,0 +1,23 @@
+# fly.toml - Fly.io configuration
+# Run: fly launch --no-deploy
+# Then: fly secrets set SPOTIFY_CLIENT_ID=xxx SPOTIFY_CLIENT_SECRET=xxx SECRET_KEY=xxx BASE_URL=https://your-app.fly.dev
+
+app = "spotify-to-tidal"
+primary_region = "sjc"
+
+[build]
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[env]
+  # BASE_URL will be set via secrets or after deployment
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

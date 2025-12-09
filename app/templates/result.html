@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Sync Complete</h1>
+
+<div class="card">
+    {% if result.playlists %}
+    <h3>Playlists</h3>
+    <p>{{ result.playlists.synced }} playlists synced</p>
+    {% if result.playlists.not_found %}
+    <p style="color: #b3b3b3;">{{ result.playlists.not_found|length }} tracks not found</p>
+    {% endif %}
+    {% endif %}
+
+    {% if result.favorites %}
+    <h3>Favorites</h3>
+    <p>{{ result.favorites.added }} tracks added</p>
+    {% if result.favorites.not_found %}
+    <p style="color: #b3b3b3;">{{ result.favorites.not_found|length }} tracks not found</p>
+    {% endif %}
+    {% endif %}
+
+    {% if result.albums %}
+    <h3>Albums</h3>
+    <p>{{ result.albums.added }} albums added</p>
+    {% if result.albums.not_found %}
+    <p style="color: #b3b3b3;">{{ result.albums.not_found|length }} albums not found:</p>
+    <ul style="color: #b3b3b3; font-size: 0.875rem;">
+        {% for album in result.albums.not_found[:10] %}
+        <li>{{ album }}</li>
+        {% endfor %}
+        {% if result.albums.not_found|length > 10 %}
+        <li>...and {{ result.albums.not_found|length - 10 }} more</li>
+        {% endif %}
+    </ul>
+    {% endif %}
+    {% endif %}
+
+    {% if result.artists %}
+    <h3>Artists</h3>
+    <p>{{ result.artists.added }} artists followed</p>
+    {% if result.artists.not_found %}
+    <p style="color: #b3b3b3;">{{ result.artists.not_found|length }} artists not found</p>
+    {% endif %}
+    {% endif %}
+</div>
+
+<a href="/" class="btn btn-sync" style="text-align: center;">Back to Home</a>
+{% endblock %}

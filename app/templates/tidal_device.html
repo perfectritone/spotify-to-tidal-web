@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Connect Tidal</h1>
+<p class="subtitle">Complete authorization in the popup</p>
+
+<div class="card">
+    <p>Click the button below to authorize with Tidal:</p>
+    <a href="{{ verification_uri }}" target="_blank" class="btn btn-tidal" style="display: inline-block; margin: 1rem 0;">
+        Open Tidal Authorization
+    </a>
+    <p id="status" style="color: #b3b3b3;">Waiting for authorization...</p>
+</div>
+
+<script>
+    // Poll for auth completion
+    async function checkAuth() {
+        try {
+            const response = await fetch('/auth/tidal/check');
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                document.getElementById('status').textContent = 'Success! Redirecting...';
+                window.location.href = '/';
+            } else if (data.status === 'error') {
+                document.getElementById('status').textContent = 'Error: ' + data.message;
+            } else {
+                // Still pending, check again
+                setTimeout(checkAuth, 2000);
+            }
+        } catch (e) {
+            setTimeout(checkAuth, 2000);
+        }
+    }
+
+    // Start polling after a short delay
+    setTimeout(checkAuth, 3000);
+</script>
+{% endblock %}

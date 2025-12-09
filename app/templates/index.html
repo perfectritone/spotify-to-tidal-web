@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Spotify to Tidal</h1>
+<p class="subtitle">Sync your playlists, albums, and artists</p>
+
+{% if request.query_params.get('error') %}
+<div class="error">
+    Error: {{ request.query_params.get('error') }}
+</div>
+{% endif %}
+
+<div class="card">
+    <h3>1. Connect Your Accounts</h3>
+
+    <div class="status">
+        <span class="status-dot {{ 'connected' if spotify_connected else 'disconnected' }}"></span>
+        <span>Spotify: {{ spotify_user if spotify_connected else 'Not connected' }}</span>
+    </div>
+    {% if not spotify_connected %}
+    <a href="/auth/spotify" class="btn btn-spotify">Connect Spotify</a>
+    {% endif %}
+
+    <div class="status" style="margin-top: 1rem;">
+        <span class="status-dot {{ 'connected' if tidal_connected else 'disconnected' }}"></span>
+        <span>Tidal: {{ tidal_user if tidal_connected else 'Not connected' }}</span>
+    </div>
+    {% if not tidal_connected %}
+    <a href="/auth/tidal" class="btn btn-tidal">Connect Tidal</a>
+    {% endif %}
+</div>
+
+{% if spotify_connected and tidal_connected %}
+<div class="card">
+    <h3>2. Choose What to Sync</h3>
+    <form action="/sync" method="POST">
+        <div class="checkbox-group">
+            <label>
+                <input type="checkbox" name="playlists" checked>
+                Playlists
+            </label>
+            <label>
+                <input type="checkbox" name="favorites" checked>
+                Liked Songs (Favorites)
+            </label>
+            <label>
+                <input type="checkbox" name="albums" checked>
+                Saved Albums
+            </label>
+            <label>
+                <input type="checkbox" name="artists" checked>
+                Followed Artists
+            </label>
+        </div>
+        <button type="submit" class="btn btn-sync">Start Sync</button>
+    </form>
+</div>
+{% endif %}
+
+<p style="margin-top: 2rem; color: #b3b3b3; font-size: 0.875rem;">
+    <a href="/logout">Disconnect &amp; Start Over</a>
+</p>
+{% endblock %}
