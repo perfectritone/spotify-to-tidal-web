@@ -78,15 +78,17 @@ class RefreshableSpotify:
         self.refresh_token = refresh_token
         self._client = spotipy.Spotify(auth=access_token)
 
-    def _refresh_and_retry(self, method_name: str, *args, **kwargs):
+    def _refresh_and_retry(self, method_name: str, original_error: Exception, *args, **kwargs):
         """Try to refresh token and retry the request."""
         if self.refresh_token:
             new_token = refresh_spotify_token(self.refresh_token)
             if new_token:
+                print(f"Spotify token refreshed successfully")
                 self.access_token = new_token
                 self._client = spotipy.Spotify(auth=new_token)
                 return getattr(self._client, method_name)(*args, **kwargs)
-        raise
+            print(f"Failed to refresh Spotify token")
+        raise original_error
 
     def __getattr__(self, name):
         """Proxy method calls to the underlying client, with retry on 401."""
@@ -99,7 +101,7 @@ class RefreshableSpotify:
                 return attr(*args, **kwargs)
             except SpotifyException as e:
                 if e.http_status == 401 and self.refresh_token:
-                    return self._refresh_and_retry(name, *args, **kwargs)
+                    return self._refresh_and_retry(name, e, *args, **kwargs)
                 raise
 
         return wrapper

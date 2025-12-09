@@ -1,3 +1,4 @@
+import json
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -334,16 +335,22 @@ async def sync_stream(
         raise HTTPException(400, "Tidal not connected")
 
     async def generate():
-        async for event in run_sync_streaming(
-            spotify_token=spotify["token"],
-            tidal_session=tidal,
-            sync_playlists=playlists,
-            do_sync_albums=albums,
-            do_sync_artists=artists,
-            do_sync_favorites=favorites,
-            spotify_refresh_token=spotify.get("refresh_token"),
-        ):
-            yield event
+        try:
+            async for event in run_sync_streaming(
+                spotify_token=spotify["token"],
+                tidal_session=tidal,
+                sync_playlists=playlists,
+                do_sync_albums=albums,
+                do_sync_artists=artists,
+                do_sync_favorites=favorites,
+                spotify_refresh_token=spotify.get("refresh_token"),
+            ):
+                yield event
+        except Exception as e:
+            import traceback
+            print(f"SSE stream error: {e}")
+            traceback.print_exc()
+            yield {"event": "message", "data": json.dumps({"type": "error", "task": "sync", "error": str(e)})}
 
     return EventSourceResponse(
         generate(),
