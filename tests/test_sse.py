@@ -16,7 +16,7 @@ class TestSyncStreaming:
 
         # Mock all the library functions
         with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
-             patch('app.sync.get_tidal_playlists_wrapper') as mock_tidal_playlists, \
+             patch('app.sync.get_all_playlists', new_callable=AsyncMock) as mock_tidal_playlists, \
              patch('app.sync.sync_playlist', new_callable=AsyncMock), \
              patch('app.sync.fetch_spotify_saved_tracks', new_callable=AsyncMock) as mock_tracks, \
              patch('app.sync.get_all_favorites', new_callable=AsyncMock) as mock_favorites, \
@@ -28,7 +28,7 @@ class TestSyncStreaming:
              patch('app.sync.SPOTIFY_DELAY', 0):
 
             mock_playlists.return_value = []
-            mock_tidal_playlists.return_value = {}
+            mock_tidal_playlists.return_value = []
             mock_tracks.return_value = []
             mock_favorites.return_value = []
             mock_albums.return_value = []
@@ -63,7 +63,7 @@ class TestSyncStreaming:
         from app.sync import run_sync_streaming
 
         with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
-             patch('app.sync.get_tidal_playlists_wrapper') as mock_tidal_playlists, \
+             patch('app.sync.get_all_playlists', new_callable=AsyncMock) as mock_tidal_playlists, \
              patch('app.sync.sync_playlist', new_callable=AsyncMock), \
              patch('app.sync.REQUEST_DELAY', 0):
 
@@ -73,7 +73,7 @@ class TestSyncStreaming:
                 {"name": "Playlist 2"},
                 {"name": "Playlist 3"},
             ]
-            mock_tidal_playlists.return_value = {}
+            mock_tidal_playlists.return_value = []
 
             mock_tidal = MagicMock()
 
@@ -112,11 +112,11 @@ class TestSyncStreaming:
         from app.sync import run_sync_streaming
 
         with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
-             patch('app.sync.get_tidal_playlists_wrapper') as mock_tidal_playlists, \
+             patch('app.sync.get_all_playlists', new_callable=AsyncMock) as mock_tidal_playlists, \
              patch('app.sync.REQUEST_DELAY', 0):
 
             mock_playlists.return_value = []
-            mock_tidal_playlists.return_value = {}
+            mock_tidal_playlists.return_value = []
 
             mock_tidal = MagicMock()
 
@@ -192,11 +192,11 @@ class TestSSEEndpoint:
     def test_sync_stream_returns_event_stream(self, client, authenticated_session):
         """Should return text/event-stream content type."""
         with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
-             patch('app.sync.get_tidal_playlists_wrapper') as mock_tidal_playlists, \
+             patch('app.sync.get_all_playlists', new_callable=AsyncMock) as mock_tidal_playlists, \
              patch('app.sync.REQUEST_DELAY', 0):
 
             mock_playlists.return_value = []
-            mock_tidal_playlists.return_value = {}
+            mock_tidal_playlists.return_value = []
 
             response = client.get("/sync/stream?playlists=true")
             assert response.status_code == 200
@@ -205,11 +205,11 @@ class TestSSEEndpoint:
     def test_sync_stream_yields_events(self, client, authenticated_session):
         """Should yield SSE events."""
         with patch('app.sync.get_playlists_from_spotify', new_callable=AsyncMock) as mock_playlists, \
-             patch('app.sync.get_tidal_playlists_wrapper') as mock_tidal_playlists, \
+             patch('app.sync.get_all_playlists', new_callable=AsyncMock) as mock_tidal_playlists, \
              patch('app.sync.REQUEST_DELAY', 0):
 
             mock_playlists.return_value = [{"name": "Test Playlist"}]
-            mock_tidal_playlists.return_value = {}
+            mock_tidal_playlists.return_value = []
 
             with patch('app.sync.sync_playlist', new_callable=AsyncMock):
                 response = client.get("/sync/stream?playlists=true")

@@ -13,7 +13,6 @@ import tidalapi
 from spotify_to_tidal.sync import (
     sync_playlist,
     get_playlists_from_spotify,
-    get_tidal_playlists_wrapper,
     check_album_similarity,
     simple,
     normalize,
@@ -21,7 +20,7 @@ from spotify_to_tidal.sync import (
     populate_track_match_cache,
     search_new_tracks_on_tidal,
 )
-from spotify_to_tidal.tidalapi_patch import get_all_favorites
+from spotify_to_tidal.tidalapi_patch import get_all_favorites, get_all_playlists
 
 # Delay between API operations to avoid rate limiting (in seconds)
 REQUEST_DELAY = 0.5
@@ -292,7 +291,9 @@ async def run_sync_streaming(
         await asyncio.sleep(REQUEST_DELAY)
         try:
             playlists = await get_playlists_from_spotify(spotify, config)
-            tidal_playlists = get_tidal_playlists_wrapper(tidal_session)
+            # Get Tidal playlists (await directly instead of using wrapper with asyncio.run)
+            tidal_playlist_list = await get_all_playlists(tidal_session.user)
+            tidal_playlists = {p.name: p for p in tidal_playlist_list}
             total = len(playlists)
 
             for i, spotify_playlist in enumerate(playlists):
