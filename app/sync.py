@@ -23,14 +23,52 @@ from spotify_to_tidal.sync import (
 from spotify_to_tidal.tidalapi_patch import get_all_playlists
 
 # Delay between API operations to avoid rate limiting (in seconds)
-REQUEST_DELAY = 0.5
+REQUEST_DELAY = 0.1
 # Delay between Spotify API calls to avoid 429 errors
-SPOTIFY_DELAY = 0.2
+SPOTIFY_DELAY = 0.05
 # Batch size for processing
 BATCH_SIZE = 50
+# Max concurrent Tidal searches
+MAX_CONCURRENT_SEARCHES = 3
 
 # File where library writes not-found songs
 NOT_FOUND_FILE = "songs not found.txt"
+
+# Semaphore for limiting concurrent Tidal API calls
+_tidal_semaphore = None
+
+
+def get_tidal_semaphore():
+    """Get or create the Tidal API semaphore."""
+    global _tidal_semaphore
+    if _tidal_semaphore is None:
+        _tidal_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SEARCHES)
+    return _tidal_semaphore
+
+
+async def search_tidal_track(tidal_session, track: dict, existing_ids: set) -> tuple[bool, str, int]:
+    """Search for a track on Tidal. Returns (found, not_found_str, added_count)."""
+    artist_name = track['artists'][0]['name'] if track.get('artists') else ''
+    query = f"{simple(track['name'])} {simple(artist_name)}"
+
+    async with get_tidal_semaphore():
+        try:
+            search_results = tidal_session.search(query, models=[tidalapi.media.Track], limit=5)
+
+            for tidal_track in search_results.get('tracks', [])[:5]:
+                if (normalize(simple(tidal_track.name.lower())) == normalize(simple(track['name'].lower()))):
+                    if tidal_track.id not in existing_ids:
+                        try:
+                            tidal_session.user.favorites.add_track(tidal_track.id)
+                            existing_ids.add(tidal_track.id)
+                            return (True, '', 1)
+                        except Exception:
+                            pass
+                    return (True, '', 0)  # Already exists
+
+            return (False, f"{artist_name} - {track['name']}", 0)
+        except Exception:
+            return (False, f"{artist_name} - {track['name']}", 0)
 
 
 def is_auth_error(e: Exception) -> bool:
@@ -373,48 +411,50 @@ async def run_sync_streaming(
             except Exception as e:
                 print(f"Error loading Tidal favorites: {e}")
 
-            # Process tracks in streaming fashion
+            # Process tracks in batches with parallel Tidal searches
             added = 0
             not_found = []
             processed = 0
+            batch = []
 
             async for track in iter_spotify_saved_tracks(spotify):
-                processed += 1
-                pct = 20 + int(processed / max(total_tracks, 1) * 75)
+                batch.append(track)
 
-                if processed % 10 == 0:
+                # Process in batches
+                if len(batch) >= MAX_CONCURRENT_SEARCHES:
+                    # Run searches in parallel
+                    tasks = [search_tidal_track(tidal_session, t, existing_tidal_ids) for t in batch]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    for r in results:
+                        if isinstance(r, Exception):
+                            continue
+                        found, nf_str, add_count = r
+                        added += add_count
+                        if not found and nf_str:
+                            not_found.append(nf_str)
+
+                    processed += len(batch)
+                    batch = []
+
+                    pct = 20 + int(processed / max(total_tracks, 1) * 75)
                     yield {"event": "message", "data": json.dumps({"type": "progress", "task": "favorites", "percent": pct, "item": f"Processing {processed}/{total_tracks}"})}
+                    await asyncio.sleep(REQUEST_DELAY)
 
-                # Search for track on Tidal
-                artist_name = track['artists'][0]['name'] if track.get('artists') else ''
-                query = f"{simple(track['name'])} {simple(artist_name)}"
+            # Process remaining batch
+            if batch:
+                tasks = [search_tidal_track(tidal_session, t, existing_tidal_ids) for t in batch]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                try:
-                    search_results = tidal_session.search(query, models=[tidalapi.media.Track], limit=5)
-                    matched = False
+                for r in results:
+                    if isinstance(r, Exception):
+                        continue
+                    found, nf_str, add_count = r
+                    added += add_count
+                    if not found and nf_str:
+                        not_found.append(nf_str)
 
-                    for tidal_track in search_results.get('tracks', [])[:5]:
-                        # Simple name matching
-                        if (normalize(simple(tidal_track.name.lower())) == normalize(simple(track['name'].lower())) and
-                            tidal_track.id not in existing_tidal_ids):
-                            try:
-                                tidal_session.user.favorites.add_track(tidal_track.id)
-                                existing_tidal_ids.add(tidal_track.id)
-                                added += 1
-                            except Exception:
-                                pass
-                            matched = True
-                            break
-                        elif tidal_track.id in existing_tidal_ids:
-                            matched = True
-                            break
-
-                    if not matched:
-                        not_found.append(f"{artist_name} - {track['name']}")
-                except Exception:
-                    not_found.append(f"{artist_name} - {track['name']}")
-
-                await asyncio.sleep(REQUEST_DELAY)
+                processed += len(batch)
 
             gc.collect()
             result['favorites'] = {'added': added, 'total': total_tracks, 'not_found': not_found}
