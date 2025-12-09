@@ -168,6 +168,29 @@ function stopPinging() {
     }
 }
 
+function showReauthPrompt(service) {
+    const form = document.getElementById('sync-form');
+    const resultCard = document.getElementById('result-card');
+    const resultTitle = document.getElementById('result-title');
+    const resultContent = document.getElementById('result-content');
+
+    form.style.display = 'none';
+    resultCard.style.display = 'block';
+    resultTitle.textContent = 'Session Expired';
+
+    const authUrl = service === 'spotify' ? '/auth/spotify' : '/auth/tidal';
+    const serviceName = service === 'spotify' ? 'Spotify' : 'Tidal';
+
+    resultContent.innerHTML = `
+        <div style="text-align: center; padding: 1rem;">
+            <p style="color: #e74c3c; margin-bottom: 1rem;">Your ${serviceName} session has expired.</p>
+            <a href="${authUrl}" class="btn btn-${service}" style="display: inline-block;">
+                Reconnect ${serviceName}
+            </a>
+        </div>
+    `;
+}
+
 function startSync() {
     const form = document.getElementById('sync-form');
     const btn = document.getElementById('sync-btn');
@@ -277,6 +300,12 @@ function handleSyncEvent(data) {
             el.textContent = data.error ? `Error: ${data.error.substring(0, 50)}` : 'Error';
             syncResult[task] = { error: data.error };
             console.error(`Sync error for ${task}:`, data.error);
+            break;
+
+        case 'auth_expired':
+            // Token expired, need to re-authenticate
+            stopPinging();
+            showReauthPrompt(data.service);
             break;
     }
 }

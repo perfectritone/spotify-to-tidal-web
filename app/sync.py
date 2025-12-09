@@ -11,6 +11,7 @@ from typing import Any, AsyncGenerator, List, Optional
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from spotipy.exceptions import SpotifyException
 import tidalapi
 
 from spotify_to_tidal.sync import (
@@ -31,6 +32,16 @@ BATCH_SIZE = 50
 
 # File where library writes not-found songs
 NOT_FOUND_FILE = "songs not found.txt"
+
+
+def is_auth_error(e: Exception) -> bool:
+    """Check if an exception is an authentication/token error."""
+    error_str = str(e).lower()
+    if isinstance(e, SpotifyException) and e.http_status == 401:
+        return True
+    if "401" in error_str or "token expired" in error_str or "access token" in error_str:
+        return True
+    return False
 
 
 def create_spotify_client(access_token: str, refresh_token: Optional[str] = None) -> spotipy.Spotify:
@@ -280,6 +291,9 @@ async def run_sync_streaming(
             import traceback
             print(f"Playlist sync error: {e}")
             traceback.print_exc()
+            if is_auth_error(e):
+                yield {"event": "message", "data": json.dumps({"type": "auth_expired", "service": "spotify"})}
+                return  # Stop sync, user needs to re-auth
             result['playlists'] = {'error': str(e)}
             yield {"event": "message", "data": json.dumps({"type": "error", "task": "playlists", "error": str(e)})}
             await asyncio.sleep(REQUEST_DELAY)
@@ -365,6 +379,9 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "done", "task": "favorites", "result": result['favorites']})}
             await asyncio.sleep(REQUEST_DELAY)
         except Exception as e:
+            if is_auth_error(e):
+                yield {"event": "message", "data": json.dumps({"type": "auth_expired", "service": "spotify"})}
+                return
             result['favorites'] = {'error': str(e)}
             yield {"event": "message", "data": json.dumps({"type": "error", "task": "favorites", "error": str(e)})}
             await asyncio.sleep(REQUEST_DELAY)
@@ -441,6 +458,9 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "done", "task": "albums", "result": result['albums']})}
             await asyncio.sleep(REQUEST_DELAY)
         except Exception as e:
+            if is_auth_error(e):
+                yield {"event": "message", "data": json.dumps({"type": "auth_expired", "service": "spotify"})}
+                return
             result['albums'] = {'error': str(e)}
             yield {"event": "message", "data": json.dumps({"type": "error", "task": "albums", "error": str(e)})}
             await asyncio.sleep(REQUEST_DELAY)
@@ -516,6 +536,9 @@ async def run_sync_streaming(
             yield {"event": "message", "data": json.dumps({"type": "done", "task": "artists", "result": result['artists']})}
             await asyncio.sleep(REQUEST_DELAY)
         except Exception as e:
+            if is_auth_error(e):
+                yield {"event": "message", "data": json.dumps({"type": "auth_expired", "service": "spotify"})}
+                return
             result['artists'] = {'error': str(e)}
             yield {"event": "message", "data": json.dumps({"type": "error", "task": "artists", "error": str(e)})}
             await asyncio.sleep(REQUEST_DELAY)
