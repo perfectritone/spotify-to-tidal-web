@@ -199,8 +199,22 @@ function startSync() {
         }
     };
 
-    eventSource.onerror = function() {
+    eventSource.onerror = function(e) {
+        console.error('SSE connection error:', e);
         eventSource.close();
+
+        // Mark any in-progress items as errored
+        ['playlists', 'favorites', 'albums', 'artists'].forEach(task => {
+            const item = document.querySelector(`.sync-item:has(#cb-${task})`);
+            if (item && item.classList.contains('syncing')) {
+                const el = document.getElementById(`progress-${task}`);
+                item.className = 'sync-item';
+                el.className = 'progress-info error';
+                el.textContent = 'Connection lost';
+                syncResult[task] = { error: 'Connection lost' };
+            }
+        });
+
         btn.disabled = false;
         btn.textContent = 'Start Sync';
         checkboxes.forEach(cb => cb.disabled = false);
@@ -240,8 +254,9 @@ function handleSyncEvent(data) {
         case 'error':
             item.className = 'sync-item';
             el.className = 'progress-info error';
-            el.textContent = 'Error';
+            el.textContent = data.error ? `Error: ${data.error.substring(0, 50)}` : 'Error';
             syncResult[task] = { error: data.error };
+            console.error(`Sync error for ${task}:`, data.error);
             break;
     }
 }
