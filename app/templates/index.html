@@ -139,6 +139,15 @@
         background: #1db954;
         transition: width 0.2s;
     }
+    .mini-progress-bar.syncing-bar {
+        width: 30%;
+        animation: syncing 1s ease-in-out infinite;
+    }
+    @keyframes syncing {
+        0% { transform: translateX(0); }
+        50% { transform: translateX(200%); }
+        100% { transform: translateX(0); }
+    }
 </style>
 
 <script>
@@ -209,7 +218,12 @@ function handleSyncEvent(data) {
         case 'start':
             item.className = 'sync-item syncing';
             el.className = 'progress-info active';
-            el.innerHTML = '<span class="mini-progress"><span class="mini-progress-bar" style="width: 0%"></span></span> Starting...';
+            // Show animated progress for tasks without per-item updates
+            if (task === 'playlists') {
+                el.innerHTML = '<span class="mini-progress"><span class="mini-progress-bar" style="width: 0%"></span></span> 0%';
+            } else {
+                el.innerHTML = '<span class="mini-progress"><span class="mini-progress-bar syncing-bar"></span></span> Syncing...';
+            }
             break;
 
         case 'progress':
