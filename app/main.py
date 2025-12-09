@@ -228,9 +228,9 @@ async def sync(request: Request):
         spotify_token=session["spotify_token"],
         tidal_session=session["tidal_session"],
         sync_playlists=sync_playlists,
-        sync_albums=sync_albums,
-        sync_artists=sync_artists,
-        sync_favorites=sync_favorites,
+        do_sync_albums=sync_albums,
+        do_sync_artists=sync_artists,
+        do_sync_favorites=sync_favorites,
     )
 
     return templates.TemplateResponse("result.html", {
