@@ -3,6 +3,9 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse

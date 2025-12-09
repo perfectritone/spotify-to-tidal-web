@@ -10,6 +10,7 @@ dependencies = [
     "jinja2>=3.1.0",
     "python-multipart>=0.0.18",
     "itsdangerous>=2.2.0",
+    "python-dotenv>=1.0.0",
     "spotify-to-tidal @ git+https://github.com/perfectritone/spotify_to_tidal.git",
 ]
 
