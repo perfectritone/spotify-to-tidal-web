@@ -22,6 +22,11 @@ from spotify_to_tidal.sync import (
 )
 from spotify_to_tidal.tidalapi_patch import get_all_playlists
 
+
+def strip_ampersand(s: str) -> str:
+    """Remove & from string for better matching."""
+    return s.replace('&', '')
+
 # Delay between API operations to avoid rate limiting (in seconds)
 REQUEST_DELAY = 0.1
 # Delay between Spotify API calls to avoid 429 errors
@@ -49,14 +54,14 @@ def get_tidal_semaphore():
 async def search_tidal_track(tidal_session, track: dict, existing_ids: set) -> tuple[bool, str, int]:
     """Search for a track on Tidal. Returns (found, not_found_str, added_count)."""
     artist_name = track['artists'][0]['name'] if track.get('artists') else ''
-    query = f"{simple(track['name'])} {simple(artist_name)}"
+    query = strip_ampersand(f"{simple(track['name'])} {simple(artist_name)}")
 
     async with get_tidal_semaphore():
         try:
             search_results = tidal_session.search(query, models=[tidalapi.media.Track], limit=5)
 
             for tidal_track in search_results.get('tracks', [])[:5]:
-                if (normalize(simple(tidal_track.name.lower())) == normalize(simple(track['name'].lower()))):
+                if (strip_ampersand(normalize(simple(tidal_track.name.lower()))) == strip_ampersand(normalize(simple(track['name'].lower())))):
                     if tidal_track.id not in existing_ids:
                         try:
                             tidal_session.user.favorites.add_track(tidal_track.id)
@@ -511,7 +516,7 @@ async def run_sync_streaming(
                 pct = 20 + int(processed / max(total_albums, 1) * 80)
                 yield {"event": "message", "data": json.dumps({"type": "progress", "task": "albums", "percent": pct, "item": f"{processed}/{total_albums}: {album_name[:25]}"})}
 
-                query = f"{simple(album_name)} {simple(artist_name)}"
+                query = strip_ampersand(f"{simple(album_name)} {simple(artist_name)}")
                 try:
                     search_results = tidal_session.search(query, models=[tidalapi.album.Album], limit=5)
                     matched = False
@@ -589,13 +594,13 @@ async def run_sync_streaming(
                 pct = 20 + int(processed / max(total_artists, 1) * 80)
                 yield {"event": "message", "data": json.dumps({"type": "progress", "task": "artists", "percent": pct, "item": f"{processed}/{total_artists}: {artist_name[:25]}"})}
 
-                query = simple(artist_name)
+                query = strip_ampersand(simple(artist_name))
                 try:
                     search_results = tidal_session.search(query, models=[tidalapi.artist.Artist], limit=5)
                     matched = False
 
                     for tidal_artist in search_results.get('artists', [])[:5]:
-                        if normalize(simple(tidal_artist.name.lower())) == normalize(simple(artist_name.lower())):
+                        if strip_ampersand(normalize(simple(tidal_artist.name.lower()))) == strip_ampersand(normalize(simple(artist_name.lower()))):
                             if tidal_artist.id not in tidal_favorite_artists:
                                 try:
                                     tidal_session.user.favorites.add_artist(tidal_artist.id)
