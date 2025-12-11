@@ -16,7 +16,6 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 
 from sse_starlette.sse import EventSourceResponse
-from api_analytics.fastapi import Analytics
 
 from .sync import run_sync, run_sync_streaming
 
@@ -48,6 +47,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 if ANALYTICS_API_KEY:
+    from api_analytics.fastapi import Analytics
     app.add_middleware(Analytics, api_key=ANALYTICS_API_KEY)
 
 
