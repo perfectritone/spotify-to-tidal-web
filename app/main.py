@@ -16,6 +16,8 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 
 from sse_starlette.sse import EventSourceResponse
+from api_analytics.fastapi import Analytics
+
 from .sync import run_sync, run_sync_streaming
 
 # Config from environment (host sets these once)
@@ -23,6 +25,7 @@ SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
 SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000")
+ANALYTICS_API_KEY = os.environ.get("ANALYTICS_API_KEY", "")
 IS_PRODUCTION = BASE_URL.startswith("https://")
 
 # Cookie max age: 30 days (Tidal tokens last ~7 days, but refresh works)
@@ -43,6 +46,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Spotify to Tidal Sync", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+if ANALYTICS_API_KEY:
+    app.add_middleware(Analytics, api_key=ANALYTICS_API_KEY)
 
 
 def get_cookie_data(request: Request, name: str) -> Optional[dict]:

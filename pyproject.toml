@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "spotify-to-tidal @ git+https://github.com/perfectritone/spotify_to_tidal.git",
     "sse-starlette>=3.0.3",
+    "api-analytics[fastapi]>=1.2.0",
 ]
 
 [project.optional-dependencies]
