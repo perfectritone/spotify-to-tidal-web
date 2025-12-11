@@ -1,12 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>Sync Complete</h1>
-<p class="subtitle">Here's what happened</p>
-
-<!-- Success Summary -->
 <div class="card">
-    <h3 style="color: #1db954; margin-top: 0;">Successfully Synced</h3>
+    <h3>Sync Complete</h3>
     <div class="stats-grid">
         {% if result.playlists %}
         <div class="stat-item">
@@ -17,7 +13,7 @@
         {% if result.favorites %}
         <div class="stat-item">
             <span class="stat-number">{{ result.favorites.added }}</span>
-            <span class="stat-label">Favorite Tracks</span>
+            <span class="stat-label">Favorites</span>
         </div>
         {% endif %}
         {% if result.albums %}
@@ -35,18 +31,16 @@
     </div>
 </div>
 
-<!-- Not Found Section -->
 {% set has_not_found = (result.playlists and result.playlists.not_found) or
                        (result.favorites and result.favorites.not_found) or
                        (result.albums and result.albums.not_found) or
                        (result.artists and result.artists.not_found) %}
 
 {% if has_not_found %}
-<div class="card" style="border-left: 3px solid #e74c3c;">
-    <h3 style="color: #e74c3c; margin-top: 0;">Not Found on Tidal</h3>
-    <p style="color: #b3b3b3; margin-bottom: 1.5rem;">These items couldn't be matched. They may not be available on Tidal or have different names.</p>
+<div class="card">
+    <h3 class="error-title">Not Found on Tidal</h3>
+    <p class="error-subtitle">These items may not be available or have different names.</p>
 
-    <!-- Tracks from Playlists -->
     {% if result.playlists and result.playlists.not_found %}
     <details class="not-found-section">
         <summary>
@@ -62,7 +56,6 @@
     </details>
     {% endif %}
 
-    <!-- Favorite Tracks -->
     {% if result.favorites and result.favorites.not_found %}
     <details class="not-found-section">
         <summary>
@@ -78,7 +71,6 @@
     </details>
     {% endif %}
 
-    <!-- Albums -->
     {% if result.albums and result.albums.not_found %}
     <details class="not-found-section">
         <summary>
@@ -94,7 +86,6 @@
     </details>
     {% endif %}
 
-    <!-- Artists -->
     {% if result.artists and result.artists.not_found %}
     <details class="not-found-section">
         <summary>
@@ -112,123 +103,174 @@
 </div>
 {% endif %}
 
-<!-- Errors -->
 {% set has_errors = (result.playlists and result.playlists.error) or
                     (result.favorites and result.favorites.error) or
                     (result.albums and result.albums.error) or
                     (result.artists and result.artists.error) %}
 
 {% if has_errors %}
-<div class="card" style="border-left: 3px solid #f39c12;">
-    <h3 style="color: #f39c12; margin-top: 0;">Errors</h3>
+<div class="card error-card">
+    <h3 class="warning-title">Errors</h3>
     {% if result.playlists and result.playlists.error %}
-    <p><strong>Playlists:</strong> {{ result.playlists.error }}</p>
+    <p class="error-item"><strong>Playlists:</strong> {{ result.playlists.error }}</p>
     {% endif %}
     {% if result.favorites and result.favorites.error %}
-    <p><strong>Favorites:</strong> {{ result.favorites.error }}</p>
+    <p class="error-item"><strong>Favorites:</strong> {{ result.favorites.error }}</p>
     {% endif %}
     {% if result.albums and result.albums.error %}
-    <p><strong>Albums:</strong> {{ result.albums.error }}</p>
+    <p class="error-item"><strong>Albums:</strong> {{ result.albums.error }}</p>
     {% endif %}
     {% if result.artists and result.artists.error %}
-    <p><strong>Artists:</strong> {{ result.artists.error }}</p>
+    <p class="error-item"><strong>Artists:</strong> {{ result.artists.error }}</p>
     {% endif %}
 </div>
 {% endif %}
 
-<a href="/" class="btn btn-sync" style="text-align: center; display: block;">Back to Home</a>
+<a href="/" class="btn btn-primary">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+    Sync Again
+</a>
 
 <style>
     .stats-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-        gap: 1rem;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+
+    .stat-item {
+        padding: 1.25rem;
+        background: var(--bg-secondary);
+        border-radius: 12px;
         text-align: center;
     }
-    .stat-item {
-        padding: 1rem;
-        background: #1a1a1a;
-        border-radius: 8px;
-    }
+
     .stat-number {
         display: block;
         font-size: 2rem;
-        font-weight: bold;
-        color: #1db954;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--spotify) 0%, var(--tidal) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
+
     .stat-label {
         display: block;
         font-size: 0.75rem;
-        color: #b3b3b3;
+        color: var(--text-muted);
         text-transform: uppercase;
         letter-spacing: 0.05em;
+        margin-top: 0.25rem;
     }
+
+    .error-title {
+        color: var(--error) !important;
+    }
+
+    .error-subtitle {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    .warning-title {
+        color: #f39c12 !important;
+    }
+
+    .error-card {
+        border-left: 3px solid #f39c12;
+    }
+
+    .error-item {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .error-item:last-child {
+        margin-bottom: 0;
+    }
+
     .not-found-section {
         margin-bottom: 0.5rem;
-        border: 1px solid #333;
-        border-radius: 6px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
         overflow: hidden;
     }
+
     .not-found-section summary {
         display: flex;
         align-items: center;
         padding: 0.75rem 1rem;
-        background: #1a1a1a;
+        background: var(--bg-secondary);
         cursor: pointer;
         user-select: none;
+        font-size: 0.9rem;
+        list-style: none;
     }
-    .not-found-section summary:hover {
-        background: #222;
+
+    .not-found-section summary::-webkit-details-marker {
+        display: none;
     }
-    .not-found-section[open] summary {
-        border-bottom: 1px solid #333;
-    }
-    .section-icon {
+
+    .not-found-section summary::before {
+        content: "›";
         margin-right: 0.75rem;
-        font-size: 1.1rem;
+        font-size: 1.2rem;
+        color: var(--text-muted);
+        transition: transform 0.2s;
     }
+
+    .not-found-section[open] summary::before {
+        transform: rotate(90deg);
+    }
+
+    .not-found-section summary:hover {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .not-found-section[open] summary {
+        border-bottom: 1px solid var(--border);
+    }
+
+    .section-icon {
+        margin-right: 0.5rem;
+    }
+
     .section-title {
         flex: 1;
         font-weight: 500;
     }
+
     .section-count {
-        background: #e74c3c;
+        background: var(--error);
         color: #fff;
         padding: 0.15rem 0.5rem;
-        border-radius: 12px;
-        font-size: 0.75rem;
+        border-radius: 10px;
+        font-size: 0.7rem;
         font-weight: 600;
     }
+
     .not-found-list {
         list-style: none;
-        margin: 0;
-        padding: 0;
-        max-height: 300px;
+        max-height: 250px;
         overflow-y: auto;
     }
+
     .not-found-list li {
         padding: 0.5rem 1rem;
-        border-bottom: 1px solid #222;
-        color: #b3b3b3;
-        font-size: 0.875rem;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-secondary);
+        font-size: 0.85rem;
     }
+
     .not-found-list li:last-child {
         border-bottom: none;
     }
+
     .not-found-list li:hover {
-        background: #1a1a1a;
-    }
-    details summary::-webkit-details-marker {
-        display: none;
-    }
-    details summary::before {
-        content: "▶";
-        margin-right: 0.5rem;
-        font-size: 0.7rem;
-        transition: transform 0.2s;
-    }
-    details[open] summary::before {
-        transform: rotate(90deg);
+        background: rgba(255, 255, 255, 0.02);
     }
 </style>
 {% endblock %}

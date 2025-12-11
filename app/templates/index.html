@@ -1,152 +1,327 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>Spotify to Tidal</h1>
-<p class="subtitle">Sync your playlists, albums, and artists</p>
-
 {% if request.query_params.get('error') %}
 <div class="error">
-    Error: {{ request.query_params.get('error') }}
+    {{ request.query_params.get('error') }}
 </div>
 {% endif %}
 
 <div class="card">
-    <h3>1. Connect Your Accounts</h3>
+    <h3>Connect Accounts</h3>
 
     <div class="status">
         <span class="status-dot {{ 'connected' if spotify_connected else 'disconnected' }}"></span>
-        <span>Spotify: {{ spotify_user if spotify_connected else 'Not connected' }}</span>
+        <div class="status-info">
+            <div class="status-service">Spotify</div>
+            <div class="status-user">{{ spotify_user if spotify_connected else 'Not connected' }}</div>
+        </div>
+        {% if not spotify_connected %}
+        <a href="/auth/spotify" class="btn btn-spotify btn-sm">
+            <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+            Connect
+        </a>
+        {% endif %}
     </div>
-    {% if not spotify_connected %}
-    <a href="/auth/spotify" class="btn btn-spotify">Connect Spotify</a>
-    {% endif %}
 
-    <div class="status" style="margin-top: 1rem;">
+    <div class="status">
         <span class="status-dot {{ 'connected' if tidal_connected else 'disconnected' }}"></span>
-        <span>Tidal: {{ tidal_user if tidal_connected else 'Not connected' }}</span>
+        <div class="status-info">
+            <div class="status-service">Tidal</div>
+            <div class="status-user">{{ tidal_user if tidal_connected else 'Not connected' }}</div>
+        </div>
+        {% if not tidal_connected %}
+        <a href="/auth/tidal" class="btn btn-tidal btn-sm">
+            <svg viewBox="0 0 24 24"><path d="M12.012 3.992L8.008 7.996 4.004 3.992 0 7.996l4.004 4.004 4.004-4.004 4.004 4.004-4.004 4.004 4.004 4.004 4.004-4.004-4.004-4.004 4.004-4.004 4.004 4.004 4.004-4.004-4.004-4.004L24 3.992l-4.004 4.004-4.004-4.004z"/></svg>
+            Connect
+        </a>
+        {% endif %}
     </div>
-    {% if not tidal_connected %}
-    <a href="/auth/tidal" class="btn btn-tidal">Connect Tidal</a>
-    {% endif %}
 </div>
 
 {% if spotify_connected and tidal_connected %}
 <div class="card">
-    <h3>2. Choose What to Sync</h3>
+    <h3>Select Content</h3>
     <form id="sync-form">
         <div class="checkbox-group">
-            <div class="sync-item">
-                <label>
-                    <input type="checkbox" name="playlists" id="cb-playlists" checked>
-                    <span class="label-text">Playlists</span>
-                </label>
+            <label class="checkbox-item sync-item" data-task="playlists">
+                <input type="checkbox" name="playlists" id="cb-playlists" checked>
+                <span class="label-icon">📁</span>
+                <span class="label-text">Playlists</span>
                 <span class="progress-info" id="progress-playlists"></span>
-            </div>
-            <div class="sync-item">
-                <label>
-                    <input type="checkbox" name="favorites" id="cb-favorites" checked>
-                    <span class="label-text">Liked Songs</span>
-                </label>
+            </label>
+            <label class="checkbox-item sync-item" data-task="favorites">
+                <input type="checkbox" name="favorites" id="cb-favorites" checked>
+                <span class="label-icon">❤️</span>
+                <span class="label-text">Liked Songs</span>
                 <span class="progress-info" id="progress-favorites"></span>
-            </div>
-            <div class="sync-item">
-                <label>
-                    <input type="checkbox" name="albums" id="cb-albums" checked>
-                    <span class="label-text">Albums</span>
-                </label>
+            </label>
+            <label class="checkbox-item sync-item" data-task="albums">
+                <input type="checkbox" name="albums" id="cb-albums" checked>
+                <span class="label-icon">💿</span>
+                <span class="label-text">Albums</span>
                 <span class="progress-info" id="progress-albums"></span>
-            </div>
-            <div class="sync-item">
-                <label>
-                    <input type="checkbox" name="artists" id="cb-artists" checked>
-                    <span class="label-text">Artists</span>
-                </label>
+            </label>
+            <label class="checkbox-item sync-item" data-task="artists">
+                <input type="checkbox" name="artists" id="cb-artists" checked>
+                <span class="label-icon">🎤</span>
+                <span class="label-text">Artists</span>
                 <span class="progress-info" id="progress-artists"></span>
-            </div>
+            </label>
         </div>
-        <button type="submit" class="btn btn-sync" id="sync-btn">Start Sync</button>
+        <button type="submit" class="btn btn-primary" id="sync-btn" style="margin-top: 1.25rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+            Start Sync
+        </button>
     </form>
 </div>
 
 <div class="card" id="result-card" style="display: none;">
     <h3 id="result-title">Sync Complete</h3>
     <div id="result-content"></div>
-    <button onclick="resetSync()" class="btn btn-sync" style="margin-top: 1rem;">Sync Again</button>
+    <button onclick="resetSync()" class="btn btn-primary" style="margin-top: 1.25rem;">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+        Sync Again
+    </button>
 </div>
 {% endif %}
 
-<p style="margin-top: 2rem; color: #b3b3b3; font-size: 0.875rem;">
-    <a href="/logout">Disconnect &amp; Start Over</a>
-</p>
-
 <style>
-    .sync-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.5rem 0;
+    .btn-sm {
+        padding: 0.5rem 1rem;
+        font-size: 0.8rem;
     }
-    .sync-item label {
+
+    .sync-item {
+        position: relative;
+    }
+
+    .progress-info {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-left: auto;
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        cursor: pointer;
-        flex: 1;
     }
-    .progress-info {
-        font-size: 0.8rem;
-        color: #b3b3b3;
-        min-width: 120px;
-        text-align: right;
-    }
+
     .progress-info.active {
-        color: #1db954;
+        color: var(--spotify);
     }
+
     .progress-info.done {
-        color: #1db954;
+        color: var(--success);
     }
+
     .progress-info.error {
-        color: #e74c3c;
+        color: var(--error);
     }
-    .sync-item.syncing label {
-        color: #1db954;
+
+    .sync-item.syncing {
+        border: 1px solid var(--spotify);
+        background: rgba(29, 185, 84, 0.05);
     }
-    .sync-item.done label {
-        color: #1db954;
+
+    .sync-item.done {
+        border: 1px solid var(--success);
+        background: rgba(46, 213, 115, 0.05);
     }
-    .sync-item.done label::after {
+
+    .sync-item.done .label-text::after {
         content: " ✓";
+        color: var(--success);
     }
+
     .sync-item input:disabled {
         opacity: 0.5;
     }
-    #sync-btn:disabled {
-        background: #535353;
-        cursor: not-allowed;
-    }
+
+    /* Mini progress bar */
     .mini-progress {
-        display: inline-block;
-        width: 60px;
+        width: 48px;
         height: 4px;
-        background: #333;
+        background: rgba(255, 255, 255, 0.1);
         border-radius: 2px;
         overflow: hidden;
-        margin-right: 8px;
-        vertical-align: middle;
     }
+
     .mini-progress-bar {
         height: 100%;
-        background: #1db954;
-        transition: width 0.2s;
+        background: var(--spotify);
+        border-radius: 2px;
+        transition: width 0.3s ease;
     }
+
     .mini-progress-bar.syncing-bar {
         width: 30%;
-        animation: syncing 1s ease-in-out infinite;
+        animation: syncing 1.2s ease-in-out infinite;
     }
+
     @keyframes syncing {
-        0% { transform: translateX(0); }
-        50% { transform: translateX(200%); }
-        100% { transform: translateX(0); }
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(400%); }
+    }
+
+    /* Results styles */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+
+    .stat-item {
+        padding: 1.25rem;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        text-align: center;
+    }
+
+    .stat-number {
+        display: block;
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--spotify) 0%, var(--tidal) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .stat-label {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-top: 0.25rem;
+    }
+
+    .not-found-card {
+        margin-top: 1.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--border);
+    }
+
+    .not-found-card h4 {
+        color: var(--error);
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .not-found-card > p {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        margin-bottom: 1rem;
+    }
+
+    .not-found-section {
+        margin-bottom: 0.5rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    .not-found-section summary {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background: var(--bg-secondary);
+        cursor: pointer;
+        user-select: none;
+        font-size: 0.9rem;
+        list-style: none;
+    }
+
+    .not-found-section summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .not-found-section summary::before {
+        content: "›";
+        margin-right: 0.75rem;
+        font-size: 1.2rem;
+        color: var(--text-muted);
+        transition: transform 0.2s;
+    }
+
+    .not-found-section[open] summary::before {
+        transform: rotate(90deg);
+    }
+
+    .not-found-section summary:hover {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .not-found-section[open] summary {
+        border-bottom: 1px solid var(--border);
+    }
+
+    .section-icon {
+        margin-right: 0.5rem;
+    }
+
+    .section-title {
+        flex: 1;
+        font-weight: 500;
+    }
+
+    .section-count {
+        background: var(--error);
+        color: #fff;
+        padding: 0.15rem 0.5rem;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+
+    .not-found-list {
+        list-style: none;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .not-found-list li {
+        padding: 0.5rem 1rem;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+
+    .not-found-list li:last-child {
+        border-bottom: none;
+    }
+
+    .btn-download {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        width: 100%;
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+
+    .btn-download:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text-primary);
+    }
+
+    /* Reauth prompt */
+    .reauth-prompt {
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .reauth-prompt p {
+        color: var(--error);
+        margin-bottom: 1rem;
     }
 </style>
 
@@ -155,7 +330,6 @@ let syncResult = {};
 let pingInterval = null;
 
 function startPinging() {
-    // Ping every 15 seconds to keep Fly.io machine active
     pingInterval = setInterval(() => {
         fetch('/ping').catch(() => {});
     }, 15000);
@@ -182,9 +356,9 @@ function showReauthPrompt(service) {
     const serviceName = service === 'spotify' ? 'Spotify' : 'Tidal';
 
     resultContent.innerHTML = `
-        <div style="text-align: center; padding: 1rem;">
-            <p style="color: #e74c3c; margin-bottom: 1rem;">Your ${serviceName} session has expired.</p>
-            <a href="${authUrl}" class="btn btn-${service}" style="display: inline-block;">
+        <div class="reauth-prompt">
+            <p>Your ${serviceName} session has expired.</p>
+            <a href="${authUrl}" class="btn btn-${service}">
                 Reconnect ${serviceName}
             </a>
         </div>
@@ -196,7 +370,6 @@ function startSync() {
     const btn = document.getElementById('sync-btn');
     const checkboxes = form.querySelectorAll('input[type="checkbox"]');
 
-    // Build query params
     const params = new URLSearchParams();
     checkboxes.forEach(cb => {
         if (cb.checked) {
@@ -209,25 +382,21 @@ function startSync() {
         return;
     }
 
-    // Disable form
     btn.disabled = true;
-    btn.textContent = 'Syncing...';
+    btn.innerHTML = `<span class="spinner-btn"></span> Syncing...`;
     checkboxes.forEach(cb => cb.disabled = true);
 
-    // Reset progress displays
     ['playlists', 'favorites', 'albums', 'artists'].forEach(task => {
         const el = document.getElementById(`progress-${task}`);
         el.textContent = '';
         el.className = 'progress-info';
-        document.querySelector(`.sync-item:has(#cb-${task})`).className = 'sync-item';
+        const item = document.querySelector(`.sync-item[data-task="${task}"]`);
+        if (item) item.className = 'checkbox-item sync-item';
     });
 
     syncResult = {};
-
-    // Start pinging to keep Fly.io machine active
     startPinging();
 
-    // Start SSE connection
     const eventSource = new EventSource(`/sync/stream?${params.toString()}`);
 
     eventSource.onmessage = function(event) {
@@ -246,12 +415,11 @@ function startSync() {
         eventSource.close();
         stopPinging();
 
-        // Mark any in-progress items as errored
         ['playlists', 'favorites', 'albums', 'artists'].forEach(task => {
-            const item = document.querySelector(`.sync-item:has(#cb-${task})`);
+            const item = document.querySelector(`.sync-item[data-task="${task}"]`);
             if (item && item.classList.contains('syncing')) {
                 const el = document.getElementById(`progress-${task}`);
-                item.className = 'sync-item';
+                item.className = 'checkbox-item sync-item';
                 el.className = 'progress-info error';
                 el.textContent = 'Connection lost';
                 syncResult[task] = { error: 'Connection lost' };
@@ -259,7 +427,7 @@ function startSync() {
         });
 
         btn.disabled = false;
-        btn.textContent = 'Start Sync';
+        btn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Start Sync`;
         checkboxes.forEach(cb => cb.disabled = false);
     };
 }
@@ -267,19 +435,18 @@ function startSync() {
 function handleSyncEvent(data) {
     const task = data.task;
     const el = document.getElementById(`progress-${task}`);
-    const item = document.querySelector(`.sync-item:has(#cb-${task})`);
+    const item = document.querySelector(`.sync-item[data-task="${task}"]`);
 
     if (!el || !item) return;
 
     switch (data.type) {
         case 'start':
-            item.className = 'sync-item syncing';
+            item.className = 'checkbox-item sync-item syncing';
             el.className = 'progress-info active';
-            // Show animated progress for tasks without per-item updates
             if (task === 'playlists') {
                 el.innerHTML = '<span class="mini-progress"><span class="mini-progress-bar" style="width: 0%"></span></span> 0%';
             } else {
-                el.innerHTML = '<span class="mini-progress"><span class="mini-progress-bar syncing-bar"></span></span> Syncing...';
+                el.innerHTML = '<span class="mini-progress"><span class="mini-progress-bar syncing-bar"></span></span>';
             }
             break;
 
@@ -288,22 +455,21 @@ function handleSyncEvent(data) {
             break;
 
         case 'done':
-            item.className = 'sync-item done';
+            item.className = 'checkbox-item sync-item done';
             el.className = 'progress-info done';
-            el.textContent = 'Done';
+            el.textContent = '✓';
             syncResult[task] = data.result;
             break;
 
         case 'error':
-            item.className = 'sync-item';
+            item.className = 'checkbox-item sync-item';
             el.className = 'progress-info error';
-            el.textContent = data.error ? `Error: ${data.error.substring(0, 50)}` : 'Error';
+            el.textContent = data.error ? `${data.error.substring(0, 30)}...` : 'Error';
             syncResult[task] = { error: data.error };
             console.error(`Sync error for ${task}:`, data.error);
             break;
 
         case 'auth_expired':
-            // Token expired, need to re-authenticate
             stopPinging();
             showReauthPrompt(data.service);
             break;
@@ -333,12 +499,9 @@ function showResults() {
     }
     html += '</div>';
 
-    // Show not found items
     const notFoundSections = [];
 
-    // Playlist tracks (parse the file format)
     if (syncResult.playlist_tracks_not_found?.length) {
-        // Filter out header lines and format nicely
         const tracks = syncResult.playlist_tracks_not_found.filter(line =>
             line && !line.startsWith('=') && !line.startsWith('Playlist:') && line.trim()
         );
@@ -359,8 +522,8 @@ function showResults() {
 
     if (notFoundSections.length > 0) {
         html += `<div class="not-found-card">
-            <h4 style="color: #e74c3c; margin: 1rem 0 0.5rem;">Not Found on Tidal</h4>
-            <p style="color: #888; font-size: 0.8rem; margin-bottom: 1rem;">These items may not be available or have different names.</p>`;
+            <h4>Not Found on Tidal</h4>
+            <p>These items may not be available or have different names.</p>`;
 
         notFoundSections.forEach(section => {
             html += `<details class="not-found-section">
@@ -375,8 +538,10 @@ function showResults() {
             </details>`;
         });
 
-        // Download button
-        html += `<button onclick="downloadReport()" class="btn-download">Download Report (.txt)</button>`;
+        html += `<button onclick="downloadReport()" class="btn-download">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Download Report
+        </button>`;
         html += '</div>';
     }
 
@@ -414,14 +579,15 @@ function resetSync() {
     form.style.display = 'block';
     resultCard.style.display = 'none';
     btn.disabled = false;
-    btn.textContent = 'Start Sync';
+    btn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> Start Sync`;
     checkboxes.forEach(cb => cb.disabled = false);
 
     ['playlists', 'favorites', 'albums', 'artists'].forEach(task => {
         const el = document.getElementById(`progress-${task}`);
         el.textContent = '';
         el.className = 'progress-info';
-        document.querySelector(`.sync-item:has(#cb-${task})`).className = 'sync-item';
+        const item = document.querySelector(`.sync-item[data-task="${task}"]`);
+        if (item) item.className = 'checkbox-item sync-item';
     });
 }
 
@@ -432,113 +598,17 @@ document.getElementById('sync-form')?.addEventListener('submit', function(e) {
 </script>
 
 <style>
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-        gap: 1rem;
-        text-align: center;
-    }
-    .stat-item {
-        padding: 1rem;
-        background: #1a1a1a;
-        border-radius: 8px;
-    }
-    .stat-number {
-        display: block;
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #1db954;
-    }
-    .stat-label {
-        display: block;
-        font-size: 0.7rem;
-        color: #b3b3b3;
-        text-transform: uppercase;
-    }
-    .not-found-card {
-        margin-top: 1.5rem;
-        padding-top: 1rem;
-        border-top: 1px solid #333;
-    }
-    .not-found-section {
-        margin-bottom: 0.5rem;
-        border: 1px solid #333;
-        border-radius: 6px;
-        overflow: hidden;
-    }
-    .not-found-section summary {
-        display: flex;
-        align-items: center;
-        padding: 0.6rem 0.8rem;
-        background: #1a1a1a;
-        cursor: pointer;
-        user-select: none;
-        font-size: 0.9rem;
-    }
-    .not-found-section summary:hover {
-        background: #222;
-    }
-    .not-found-section[open] summary {
-        border-bottom: 1px solid #333;
-    }
-    .section-icon {
-        margin-right: 0.6rem;
-    }
-    .section-title {
-        flex: 1;
-        font-weight: 500;
-    }
-    .section-count {
-        background: #e74c3c;
-        color: #fff;
-        padding: 0.1rem 0.4rem;
-        border-radius: 10px;
-        font-size: 0.7rem;
-        font-weight: 600;
-    }
-    .not-found-list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        max-height: 200px;
-        overflow-y: auto;
-    }
-    .not-found-list li {
-        padding: 0.4rem 0.8rem;
-        border-bottom: 1px solid #222;
-        color: #999;
-        font-size: 0.8rem;
-    }
-    .not-found-list li:last-child {
-        border-bottom: none;
-    }
-    details summary::-webkit-details-marker {
-        display: none;
-    }
-    details summary::before {
-        content: "▶";
-        margin-right: 0.4rem;
-        font-size: 0.6rem;
-        transition: transform 0.2s;
-    }
-    details[open] summary::before {
-        transform: rotate(90deg);
-    }
-    .btn-download {
-        display: block;
-        width: 100%;
-        margin-top: 1rem;
-        padding: 0.6rem 1rem;
-        background: #333;
-        color: #fff;
-        border: 1px solid #444;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.85rem;
-        transition: background 0.2s;
-    }
-    .btn-download:hover {
-        background: #444;
-    }
+.spinner-btn {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(0,0,0,0.2);
+    border-top-color: #000;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
 </style>
 {% endblock %}
